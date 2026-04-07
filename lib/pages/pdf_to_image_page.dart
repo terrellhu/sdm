@@ -417,24 +417,32 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         
         // 页面网格
         Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 150,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.75,
-            ),
-            itemCount: _pageCount,
-            itemBuilder: (context, index) {
-              final pageNum = index + 1;
-              final isSelected = _selectedPages.contains(pageNum);
-              
-              return _PageThumbnail(
-                document: _pdfDocument!,
-                pageNumber: pageNum,
-                isSelected: isSelected,
-                onTap: () => _togglePageSelection(pageNum),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth <= 0) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final horizontalPadding = constraints.maxWidth > 32 ? 16.0 : 0.0;
+              return GridView.builder(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 16),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 150,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.75,
+                ),
+                itemCount: _pageCount,
+                itemBuilder: (context, index) {
+                  final pageNum = index + 1;
+                  final isSelected = _selectedPages.contains(pageNum);
+                  
+                  return _PageThumbnail(
+                    document: _pdfDocument!,
+                    pageNumber: pageNum,
+                    isSelected: isSelected,
+                    onTap: () => _togglePageSelection(pageNum),
+                  );
+                },
               );
             },
           ),

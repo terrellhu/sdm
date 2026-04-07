@@ -55,23 +55,36 @@ class HomePage extends StatelessWidget {
           ),
           
           // 工具网格
-          SliverPadding(
-            padding: const EdgeInsets.all(20),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 220,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: 1.0,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final tool = _tools[index];
-                  return _ToolCard(tool: tool);
-                },
-                childCount: _tools.length,
-              ),
-            ),
+          SliverLayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.crossAxisExtent <= 0) {
+                return const SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 200,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
+              }
+              final horizontalPadding = constraints.crossAxisExtent > 40 ? 20.0 : 0.0;
+              return SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 220,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 1.0,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final tool = _tools[index];
+                      return _ToolCard(tool: tool);
+                    },
+                    childCount: _tools.length,
+                  ),
+                ),
+              );
+            },
           ),
           
           // 底部说明
