@@ -15,7 +15,54 @@ class HomePage extends StatelessWidget {
           color: Colors.red,
           routeName: 'pdfToImage',
         ),
-        // 更多工具可以在这里添加
+        ToolItem(
+          id: 'image_viewer',
+          name: '图片浏览',
+          description: '浏览文件夹图片，支持全屏预览和多选',
+          icon: Icons.photo_library,
+          color: Colors.blue,
+          routeName: 'imageViewer',
+        ),
+        ToolItem(
+          id: 'batch_print',
+          name: '批量打印',
+          description: '批量打印多张图片，自定义每页布局',
+          icon: Icons.print,
+          color: Colors.green,
+          routeName: 'batchPrint',
+        ),
+        ToolItem(
+          id: 'pdf_merge',
+          name: 'PDF 合并',
+          description: '将多个 PDF 文件合并为一个',
+          icon: Icons.merge,
+          color: Colors.orange,
+          routeName: 'pdfMerge',
+        ),
+        ToolItem(
+          id: 'image_to_pdf',
+          name: '图片转 PDF',
+          description: '将多张图片打包导出为 PDF 文件',
+          icon: Icons.image_outlined,
+          color: Colors.purple,
+          routeName: 'imageToPdf',
+        ),
+        ToolItem(
+          id: 'pdf_watermark',
+          name: 'PDF 加水印',
+          description: '为 PDF 每页添加自定义文字水印',
+          icon: Icons.water_drop_outlined,
+          color: Colors.teal,
+          routeName: 'pdfWatermark',
+        ),
+        ToolItem(
+          id: 'image_compress',
+          name: '图片压缩',
+          description: '批量压缩图片体积，支持多种格式',
+          icon: Icons.compress,
+          color: Colors.indigo,
+          routeName: 'imageCompress',
+        ),
       ];
 
   @override
