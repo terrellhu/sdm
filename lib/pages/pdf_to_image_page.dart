@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'dart:typed_data';
-import 'dart:ui';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:pdf_render/pdf_render.dart';
+import 'package:pdfx/pdfx.dart' as pdfx;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:go_router/go_router.dart';
@@ -18,7 +17,7 @@ class PdfToImagePage extends StatefulWidget {
 
 class _PdfToImagePageState extends State<PdfToImagePage> {
   String? _pdfName;
-  PdfDocument? _pdfDocument;
+  pdfx.PdfDocument? _pdfDocument;
   int _pageCount = 0;
   bool _isLoading = false;
   bool _isConverting = false;
@@ -30,7 +29,7 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
 
   @override
   void dispose() {
-    _pdfDocument?.dispose();
+    _pdfDocument?.close();
     super.dispose();
   }
 
@@ -48,14 +47,14 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         final filePath = result.files.single.path!;
         final fileName = result.files.single.name;
         
-        await _pdfDocument?.dispose();
-        final doc = await PdfDocument.openFile(filePath);
+        await _pdfDocument?.close();
+        final doc = await pdfx.PdfDocument.openFile(filePath);
         
         setState(() {
           _pdfName = fileName;
           _pdfDocument = doc;
-          _pageCount = doc.pageCount;
-          _selectedPages = List.generate(doc.pageCount, (i) => i + 1);
+          _pageCount = doc.pagesCount;
+          _selectedPages = List.generate(doc.pagesCount, (i) => i + 1);
         });
       }
     } catch (e) {
@@ -113,28 +112,25 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         final page = await _pdfDocument!.getPage(pageNum);
         
         // 渲染为图片
-        final renderWidth = (page.width * _scale).toInt();
-        final renderHeight = (page.height * _scale).toInt();
-        final img = await page.render(
+        final renderWidth = page.width * _scale;
+        final renderHeight = page.height * _scale;
+        final pageImage = await page.render(
           width: renderWidth,
           height: renderHeight,
-          fullWidth: renderWidth.toDouble(),
-          fullHeight: renderHeight.toDouble(),
+          format: pdfx.PdfPageImageFormat.png,
         );
         
-        // 获取图片数据
-        final imgData = await img.createImageIfNotAvailable();
-        final byteData = await imgData.toByteData(format: ImageByteFormat.png);
-        
-        if (byteData != null) {
+        if (pageImage != null) {
           // 保存文件
           final fileName = '${baseName}_page_$pageNum.$_outputFormat';
           final filePath = path.join(exportDir.path, fileName);
           final file = File(filePath);
           
-          await file.writeAsBytes(byteData.buffer.asUint8List());
+          await file.writeAsBytes(pageImage.bytes);
           converted.add(filePath);
         }
+        
+        await page.close();
       }
 
       setState(() => _isConverting = false);
@@ -148,10 +144,24 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
   }
 
   void _showError(String message) {
-    ShadToaster.of(context).show(
-      ShadToast(
+    showShadDialog(
+      context: context,
+      builder: (context) => ShadDialog.alert(
         title: const Text('错误'),
-        description: Text(message),
+        description: SelectableText(message),
+        actions: [
+          ShadButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: message));
+              Navigator.of(context).pop();
+            },
+            child: const Text('复制错误信息'),
+          ),
+          ShadButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
       ),
     );
   }
@@ -487,7 +497,7 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
 }
 
 class _PageThumbnail extends StatefulWidget {
-  final PdfDocument document;
+  final pdfx.PdfDocument document;
   final int pageNumber;
   final bool isSelected;
   final VoidCallback onTap;
@@ -516,25 +526,21 @@ class _PageThumbnailState extends State<_PageThumbnail> {
   Future<void> _loadThumbnail() async {
     try {
       final page = await widget.document.getPage(widget.pageNumber);
-      final thumbWidth = 150;
-      final thumbHeight = (page.height * 150 / page.width).toInt();
-      final img = await page.render(
+      final thumbWidth = 150.0;
+      final thumbHeight = page.height * 150.0 / page.width;
+      final pageImage = await page.render(
         width: thumbWidth,
         height: thumbHeight,
-        fullWidth: thumbWidth.toDouble(),
-        fullHeight: thumbHeight.toDouble(),
+        format: pdfx.PdfPageImageFormat.png,
       );
-      final imgData = await img.createImageIfNotAvailable();
-      final byteData = await imgData.toByteData(format: ImageByteFormat.png);
       
-      if (byteData != null && mounted) {
+      if (pageImage != null && mounted) {
         setState(() {
-          _imageProvider = MemoryImage(
-            Uint8List.view(byteData.buffer),
-          );
+          _imageProvider = MemoryImage(pageImage.bytes);
           _isLoading = false;
         });
       }
+      await page.close();
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
