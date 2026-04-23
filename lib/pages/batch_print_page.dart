@@ -321,7 +321,12 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
                   const SizedBox(height: 20),
 
                   // Layout preview
-                  if (_files.isNotEmpty) _LayoutPreview(perPage: _imagesPerPage),
+                  if (_files.isNotEmpty)
+                    _LayoutPreview(
+                      perPage: _imagesPerPage,
+                      files: _files,
+                      landscape: _landscape,
+                    ),
                 ],
               ),
             ),
@@ -471,8 +476,14 @@ class _InfoRow extends StatelessWidget {
 
 class _LayoutPreview extends StatelessWidget {
   final int perPage;
+  final List<File> files;
+  final bool landscape;
 
-  const _LayoutPreview({required this.perPage});
+  const _LayoutPreview({
+    required this.perPage,
+    required this.files,
+    required this.landscape,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -480,13 +491,16 @@ class _LayoutPreview extends StatelessWidget {
     final cols = perPage <= 2 ? perPage : 2;
     final rows = (perPage / cols).ceil();
 
+    final previewWidth = landscape ? 160.0 : 120.0;
+    final previewHeight = landscape ? 120.0 : 160.0;
+
     return ShadCard(
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '版式预览',
+            '版式预览 (第 1 页)',
             style: TextStyle(
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.foreground,
@@ -494,45 +508,69 @@ class _LayoutPreview extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Center(
-            child: SizedBox(
-              width: 120,
-              height: 160,
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: theme.colorScheme.border),
-                  borderRadius: BorderRadius.circular(4),
-                  color: theme.colorScheme.muted,
-                ),
-                padding: const EdgeInsets.all(6),
-                child: Column(
-                  children: List.generate(rows, (r) {
-                    return Expanded(
-                      child: Row(
-                        children: List.generate(cols, (c) {
-                          return Expanded(
-                            child: Container(
-                              margin: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary
-                                    .withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(2),
-                                border: Border.all(
-                                  color: theme.colorScheme.primary
-                                      .withValues(alpha: 0.5),
-                                ),
-                              ),
-                              child: const Icon(
-                                Icons.image_outlined,
-                                size: 12,
-                                color: Colors.grey,
+            child: Container(
+              width: previewWidth,
+              height: previewHeight,
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorScheme.border),
+                borderRadius: BorderRadius.circular(4),
+                color: theme.colorScheme.muted,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(6),
+              child: Column(
+                children: List.generate(rows, (r) {
+                  return Expanded(
+                    child: Row(
+                      children: List.generate(cols, (c) {
+                        final index = r * cols + c;
+                        final hasImage = index < files.length;
+
+                        return Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: hasImage
+                                  ? Colors.white
+                                  : theme.colorScheme.primary
+                                      .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(2),
+                              border: Border.all(
+                                color: theme.colorScheme.border,
+                                width: 0.5,
                               ),
                             ),
-                          );
-                        }),
-                      ),
-                    );
-                  }),
-                ),
+                            child: hasImage
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(1),
+                                    child: Image.file(
+                                      files[index],
+                                      fit: BoxFit.cover,
+                                      cacheWidth: 100,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.broken_image,
+                                        size: 10,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.image_outlined,
+                                    size: 12,
+                                    color: Colors.grey,
+                                  ),
+                          ),
+                        );
+                      }),
+                    ),
+                  );
+                }),
               ),
             ),
           ),
