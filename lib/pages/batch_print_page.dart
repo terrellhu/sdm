@@ -494,85 +494,107 @@ class _LayoutPreview extends StatelessWidget {
     final previewWidth = landscape ? 160.0 : 120.0;
     final previewHeight = landscape ? 120.0 : 160.0;
 
+    final totalPages = (files.length / perPage).ceil();
+
     return ShadCard(
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '版式预览 (第 1 页)',
+            '版式预览',
             style: TextStyle(
               fontWeight: FontWeight.w600,
               color: theme.colorScheme.foreground,
             ),
           ),
           const SizedBox(height: 14),
-          Center(
-            child: Container(
-              width: previewWidth,
-              height: previewHeight,
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.border),
-                borderRadius: BorderRadius.circular(4),
-                color: theme.colorScheme.muted,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: Column(
-                children: List.generate(rows, (r) {
-                  return Expanded(
-                    child: Row(
-                      children: List.generate(cols, (c) {
-                        final index = r * cols + c;
-                        final hasImage = index < files.length;
-
+          // 使用 Wrap 或 Column 显示所有页面
+          Wrap(
+            spacing: 16,
+            runSpacing: 24,
+            alignment: WrapAlignment.start,
+            children: List.generate(totalPages, (pageIndex) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: previewWidth,
+                    height: previewHeight,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.colorScheme.border),
+                      borderRadius: BorderRadius.circular(4),
+                      color: theme.colorScheme.muted,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(6),
+                    child: Column(
+                      children: List.generate(rows, (r) {
                         return Expanded(
-                          child: Container(
-                            margin: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: hasImage
-                                  ? Colors.white
-                                  : theme.colorScheme.primary
-                                      .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(2),
-                              border: Border.all(
-                                color: theme.colorScheme.border,
-                                width: 0.5,
-                              ),
-                            ),
-                            child: hasImage
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(1),
-                                    child: Image.file(
-                                      files[index],
-                                      fit: BoxFit.cover,
-                                      cacheWidth: 100,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.broken_image,
-                                        size: 10,
-                                        color: Colors.grey,
-                                      ),
+                          child: Row(
+                            children: List.generate(cols, (c) {
+                              final cellIndex = r * cols + c;
+                              final fileIndex = pageIndex * perPage + cellIndex;
+                              final hasImage = fileIndex < files.length;
+
+                              return Expanded(
+                                child: Container(
+                                  margin: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: hasImage
+                                        ? Colors.white
+                                        : theme.colorScheme.primary
+                                            .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(2),
+                                    border: Border.all(
+                                      color: theme.colorScheme.border,
+                                      width: 0.5,
                                     ),
-                                  )
-                                : const Icon(
-                                    Icons.image_outlined,
-                                    size: 12,
-                                    color: Colors.grey,
                                   ),
+                                  child: hasImage
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(1),
+                                          child: Image.file(
+                                            files[fileIndex],
+                                            fit: BoxFit.cover,
+                                            cacheWidth: 100,
+                                            errorBuilder: (_, __, ___) => const Icon(
+                                              Icons.broken_image,
+                                              size: 10,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.image_outlined,
+                                          size: 12,
+                                          color: Colors.grey,
+                                        ),
+                                ),
+                              );
+                            }),
                           ),
                         );
                       }),
                     ),
-                  );
-                }),
-              ),
-            ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '第 ${pageIndex + 1} 页',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.colorScheme.mutedForeground,
+                    ),
+                  ),
+                ],
+              );
+            }),
           ),
         ],
       ),
