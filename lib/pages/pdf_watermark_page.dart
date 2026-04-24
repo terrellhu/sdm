@@ -45,6 +45,8 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
     '蓝色': Colors.blue,
     '灰色': Colors.grey,
     '黑色': Colors.black,
+    '橙色': Colors.orange,
+    '绿色': Colors.green,
   };
 
   Future<void> _pickPdf() async {
@@ -208,12 +210,18 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
     final theme = ShadTheme.of(context);
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        leading: ShadIconButton(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: ShadIconButton.ghost(
           onPressed: () => context.go('/'),
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back_ios_new, size: 20, color: theme.colorScheme.foreground),
         ),
-        title: const Text('PDF 加水印'),
+        title: const Text(
+          'PDF 加水印',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
         actions: [
           if (_isSaving)
             Padding(
@@ -225,12 +233,14 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        value: _saveProgress),
+                        value: _saveProgress,
+                        color: theme.colorScheme.primary),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   Text('${(_saveProgress * 100).toInt()}%',
                       style: TextStyle(
-                          color: theme.colorScheme.mutedForeground)),
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary)),
                 ],
               ),
             ),
@@ -238,246 +248,288 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
             padding: const EdgeInsets.only(right: 16),
             child: ShadButton(
               onPressed: (!_isSaving && _pdfFile != null) ? _save : null,
-              leading: const Icon(Icons.save, size: 16),
-              child: const Text('保存'),
+              leading: const Icon(Icons.save_alt_rounded, size: 18),
+              child: const Text('保存文件'),
             ),
           ),
         ],
       ),
       body: Row(
         children: [
-          // ── Left: settings ────────────────────────────
-          SizedBox(
-            width: 320,
+          // ── Left: 精致设置面板 ────────────────────────────
+          Container(
+            width: 360,
+            decoration: BoxDecoration(
+              border: Border(right: BorderSide(color: theme.colorScheme.border, width: 0.5)),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [theme.colorScheme.background, theme.colorScheme.muted.withValues(alpha: 0.1)],
+              ),
+            ),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // PDF picker
+                  _buildSectionHeader(theme, '源文件', Icons.picture_as_pdf_rounded),
+                  const SizedBox(height: 16),
                   ShadCard(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(16),
                     child: _pdfFile == null
                         ? Center(
-                            child: ShadButton(
+                            child: ShadButton.outline(
                               onPressed: _pickPdf,
-                              leading:
-                                  const Icon(Icons.picture_as_pdf, size: 16),
-                              child: const Text('选择 PDF 文件'),
+                              leading: const Icon(Icons.add_rounded, size: 18),
+                              child: const Text('点击选择 PDF'),
                             ),
                           )
                         : Row(
                             children: [
-                              const Icon(Icons.picture_as_pdf,
-                                  color: Colors.red, size: 22),
-                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.red, size: 20),
+                              ),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(_pdfName ?? '',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w500,
-                                            fontSize: 13),
+                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                         overflow: TextOverflow.ellipsis),
                                     Text('$_pageCount 页',
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey)),
+                                        style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground)),
                                   ],
                                 ),
                               ),
-                              ShadButton.ghost(
-                                size: ShadButtonSize.sm,
+                              ShadIconButton.ghost(
                                 onPressed: _pickPdf,
-                                child: const Text('更换'),
+                                icon: const Icon(Icons.refresh_rounded, size: 18),
                               ),
                             ],
                           ),
                   ),
-                  const SizedBox(height: 20),
-                  const Text('水印设置',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 14),
-
-                  // Watermark text
-                  _Label('水印文字'),
-                  ShadInput(
-                    initialValue: _watermarkText,
-                    onChanged: (v) =>
-                        setState(() => _watermarkText = v.isEmpty ? ' ' : v),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Color
-                  _Label('水印颜色'),
-                  Wrap(
-                    spacing: 8,
-                    children: _presetColors.entries.map((entry) {
-                      final isSelected = _color.toARGB32() == entry.value.toARGB32();
-                      return GestureDetector(
-                        onTap: () => setState(() => _color = entry.value),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: entry.value,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isSelected
-                                  ? theme.colorScheme.foreground
-                                  : Colors.transparent,
-                              width: 3,
+                  
+                  const SizedBox(height: 32),
+                  _buildSectionHeader(theme, '水印样式', Icons.style_rounded),
+                  const SizedBox(height: 16),
+                  
+                  ShadCard(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildLabel('水印内容'),
+                        ShadInput(
+                          initialValue: _watermarkText,
+                          placeholder: const Text('请输入水印文字'),
+                          onChanged: (v) => setState(() => _watermarkText = v.isEmpty ? ' ' : v),
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        _buildLabel('颜色预设'),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: _presetColors.entries.map((entry) {
+                            final isSelected = _color.toARGB32() == entry.value.toARGB32();
+                            return GestureDetector(
+                              onTap: () => setState(() => _color = entry.value),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: entry.value,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+                                    width: 2.5,
+                                  ),
+                                  boxShadow: isSelected ? [BoxShadow(color: entry.value.withValues(alpha: 0.4), blurRadius: 8)] : null,
+                                ),
+                                child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 16) : null,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildLabel('透明度'),
+                            Text('${(_opacity * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        ShadSlider(
+                          initialValue: _opacity,
+                          min: 0.05,
+                          max: 1.0,
+                          divisions: 19,
+                          onChanged: (v) => setState(() => _opacity = v),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildLabel('字体大小'),
+                            Text('${_fontSize.toInt()} pt', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        ShadSlider(
+                          initialValue: _fontSize,
+                          min: 20,
+                          max: 150,
+                          divisions: 26,
+                          onChanged: (v) => setState(() => _fontSize = v),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        Row(
+                          children: [
+                            ShadSwitch(
+                              value: _diagonal,
+                              onChanged: (v) => setState(() => _diagonal = v),
                             ),
-                          ),
-                          child: isSelected
-                              ? const Icon(Icons.check,
-                                  color: Colors.white, size: 18)
-                              : null,
+                            const SizedBox(width: 10),
+                            const Text('45° 倾斜', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                          ],
                         ),
-                      );
-                    }).toList(),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 14),
 
-                  // Opacity
-                  _Label(
-                      '透明度  ${(_opacity * 100).toInt()}%'),
-                  ShadSlider(
-                    initialValue: _opacity,
-                    min: 0.05,
-                    max: 1.0,
-                    divisions: 19,
-                    onChanged: (v) => setState(() => _opacity = v),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Font size
-                  _Label('字体大小  ${_fontSize.toInt()} pt'),
-                  ShadSlider(
-                    initialValue: _fontSize,
-                    min: 20,
-                    max: 120,
-                    divisions: 20,
-                    onChanged: (v) => setState(() => _fontSize = v),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Diagonal
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _diagonal,
-                        onChanged: (v) =>
-                            setState(() => _diagonal = v ?? true),
-                      ),
-                      const Text('斜向水印（45°）'),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Output directory
-                  _Label('保存位置'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _outputDirectory ?? '默认下载文件夹',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _outputDirectory != null
-                                ? null
-                                : theme.colorScheme.mutedForeground,
+                  const SizedBox(height: 32),
+                  _buildSectionHeader(theme, '保存设置', Icons.folder_open_rounded),
+                  const SizedBox(height: 16),
+                  
+                  ShadCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('保存目录', style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground)),
+                              const SizedBox(height: 4),
+                              Text(
+                                _outputDirectory ?? '默认下载文件夹',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: _outputDirectory != null ? theme.colorScheme.foreground : theme.colorScheme.mutedForeground,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      ShadButton.secondary(
-                        size: ShadButtonSize.sm,
-                        onPressed: _pickOutputDirectory,
-                        leading: const Icon(Icons.folder, size: 14),
-                        child: const Text('选择'),
-                      ),
-                    ],
+                        ShadIconButton.secondary(
+                          onPressed: _pickOutputDirectory,
+                          icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          VerticalDivider(width: 1, color: theme.colorScheme.border),
 
-          // ── Right: preview ─────────────────────────────
+          // ── Right: 现代化预览区 ─────────────────────────────
           Expanded(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Text('预览（第 1 页）',
-                      style: TextStyle(
-                          color: theme.colorScheme.mutedForeground,
-                          fontSize: 13)),
-                ),
-                Expanded(
-                  child: _pdfFile == null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.water_drop_outlined,
-                                  size: 56,
-                                  color: theme.colorScheme.mutedForeground),
-                              const SizedBox(height: 12),
-                              Text('选择 PDF 后查看水印预览',
-                                  style: TextStyle(
-                                      color:
-                                          theme.colorScheme.mutedForeground)),
-                            ],
-                          ),
-                        )
-                      : _isLoadingPreview
-                          ? const Center(child: CircularProgressIndicator())
-                          : Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: _PreviewWidget(
-                                pageImage: _previewImage,
-                                watermarkText: _watermarkText,
-                                fontSize: _fontSize,
-                                opacity: _opacity,
-                                color: _color,
-                                diagonal: _diagonal,
+            child: Container(
+              color: theme.colorScheme.muted.withValues(alpha: 0.2),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                    color: theme.colorScheme.background.withValues(alpha: 0.5),
+                    child: Row(
+                      children: [
+                        Icon(Icons.visibility_rounded, size: 16, color: theme.colorScheme.mutedForeground),
+                        const SizedBox(width: 8),
+                        Text('实时预览 (第 1 页)', style: TextStyle(color: theme.colorScheme.mutedForeground, fontSize: 13, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: _pdfFile == null
+                        ? _buildEmptyPreview(theme)
+                        : _isLoadingPreview
+                            ? const Center(child: CircularProgressIndicator())
+                            : Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(40),
+                                  child: _PreviewWidget(
+                                    pageImage: _previewImage,
+                                    watermarkText: _watermarkText,
+                                    fontSize: _fontSize,
+                                    opacity: _opacity,
+                                    color: _color,
+                                    diagonal: _diagonal,
+                                  ),
+                                ),
                               ),
-                            ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _Label extends StatelessWidget {
-  final String text;
-  const _Label(this.text);
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildEmptyPreview(ShadThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.background,
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)],
+            ),
+            child: Icon(Icons.water_drop_rounded, size: 64, color: theme.colorScheme.mutedForeground.withValues(alpha: 0.3)),
+          ),
+          const SizedBox(height: 24),
+          Text('暂无预览', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.mutedForeground)),
+          const SizedBox(height: 8),
+          Text('请先选择 PDF 文件以配置水印', style: TextStyle(color: theme.colorScheme.mutedForeground)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(ShadThemeData theme, String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text,
-          style:
-              const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
     );
   }
 }
-
-// ──────────────────────────────────────────────
-// Live preview widget (Flutter rendering)
-// ──────────────────────────────────────────────
 
 class _PreviewWidget extends StatelessWidget {
   final ImageProvider? pageImage;
@@ -500,39 +552,46 @@ class _PreviewWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Scale font to preview size (assume page is ~A4)
         final previewFontSize = fontSize * (constraints.maxWidth / 595.0);
 
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4))
-            ],
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (pageImage != null)
-                Image(image: pageImage!, fit: BoxFit.contain),
-              Center(
-                child: Transform.rotate(
-                  angle: diagonal ? -math.pi / 4 : 0,
-                  child: Text(
-                    watermarkText,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: previewFontSize.clamp(12, 80),
-                      fontWeight: FontWeight.bold,
-                      color: color.withValues(alpha: opacity),
+        return AspectRatio(
+          aspectRatio: 1 / 1.414, // A4 ratio
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                )
+              ],
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (pageImage != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image(image: pageImage!, fit: BoxFit.contain),
+                  ),
+                Center(
+                  child: Transform.rotate(
+                    angle: diagonal ? -math.pi / 4 : 0,
+                    child: Text(
+                      watermarkText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: previewFontSize.clamp(8, 120),
+                        fontWeight: FontWeight.bold,
+                        color: color.withValues(alpha: opacity),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

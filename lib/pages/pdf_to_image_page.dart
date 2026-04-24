@@ -58,7 +58,7 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         });
       }
     } catch (e) {
-      _showError('加载PDF失败: $e');
+      _showError('加载 PDF 失败: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -80,7 +80,6 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         _conversionProgress = 0;
       });
 
-      // 确定输出目录
       String outputDir;
       if (_outputDirectory != null) {
         outputDir = _outputDirectory!;
@@ -89,7 +88,6 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         outputDir = downloadsDir?.path ?? (await getTemporaryDirectory()).path;
       }
 
-      // 创建以PDF文件名命名的子文件夹
       final baseName = _pdfName != null 
           ? path.basenameWithoutExtension(_pdfName!) 
           : 'pdf_export';
@@ -103,15 +101,12 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
       for (int i = 0; i < _selectedPages.length; i++) {
         final pageNum = _selectedPages[i];
         
-        // 更新进度
         setState(() {
           _conversionProgress = (i + 1) / _selectedPages.length;
         });
 
-        // 获取页面
         final page = await _pdfDocument!.getPage(pageNum);
         
-        // 渲染为图片
         final renderWidth = page.width * _scale;
         final renderHeight = page.height * _scale;
         final pageImage = await page.render(
@@ -121,7 +116,6 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         );
         
         if (pageImage != null) {
-          // 保存文件
           final fileName = '${baseName}_page_$pageNum.$_outputFormat';
           final filePath = path.join(exportDir.path, fileName);
           final file = File(filePath);
@@ -134,8 +128,6 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
       }
 
       setState(() => _isConverting = false);
-
-      // 显示成功对话框
       _showSuccessDialog(exportDir.path, converted.length);
     } catch (e) {
       setState(() => _isConverting = false);
@@ -212,31 +204,53 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
     final theme = ShadTheme.of(context);
     
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        leading: ShadIconButton(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: ShadIconButton.ghost(
           onPressed: () => context.go('/'),
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back_ios_new, size: 20, color: theme.colorScheme.foreground),
         ),
-        title: const Text('PDF转图片'),
+        title: Text(
+          'PDF 转图片',
+          style: TextStyle(
+            color: theme.colorScheme.foreground,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
         actions: [
           if (_pdfDocument != null && !_isConverting)
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: ShadButton(
                 onPressed: _convertToImages,
-                leading: const Icon(Icons.transform, size: 16),
+                leading: const Icon(Icons.transform_rounded, size: 18),
                 child: const Text('开始转换'),
               ),
             ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _isConverting
-              ? _buildConvertingView(theme)
-              : _pdfDocument == null
-                  ? _buildEmptyView(theme)
-                  : _buildMainView(theme),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              theme.colorScheme.background,
+              theme.colorScheme.muted.withValues(alpha: 0.3),
+            ],
+          ),
+        ),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _isConverting
+                ? _buildConvertingView(theme)
+                : _pdfDocument == null
+                    ? _buildEmptyView(theme)
+                    : _buildMainView(theme),
+      ),
     );
   }
 
@@ -245,24 +259,33 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.picture_as_pdf,
-            size: 80,
-            color: theme.colorScheme.mutedForeground,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '选择PDF文件开始转换',
-            style: TextStyle(
-              fontSize: 18,
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.muted.withValues(alpha: 0.4),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.picture_as_pdf_rounded,
+              size: 80,
               color: theme.colorScheme.mutedForeground,
             ),
           ),
           const SizedBox(height: 24),
+          Text(
+            '选择 PDF 文件开始转换',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 32),
           ShadButton(
             onPressed: _pickPdfFile,
-            leading: const Icon(Icons.folder_open, size: 16),
-            child: const Text('选择文件'),
+            size: ShadButtonSize.lg,
+            leading: const Icon(Icons.folder_open_rounded, size: 20),
+            child: const Text('选取文件'),
           ),
         ],
       ),
@@ -274,21 +297,36 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: CircularProgressIndicator(
-              value: _conversionProgress,
-              strokeWidth: 8,
-              backgroundColor: theme.colorScheme.secondary,
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 160,
+                height: 160,
+                child: CircularProgressIndicator(
+                  value: _conversionProgress,
+                  strokeWidth: 10,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: theme.colorScheme.muted,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              Text(
+                '${(_conversionProgress * 100).toInt()}%',
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 40),
+          Text(
+            '正在拼力转换中...',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.foreground,
             ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            '正在转换... ${(_conversionProgress * 100).toInt()}%',
-            style: const TextStyle(fontSize: 18),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             '正在处理第 ${(_conversionProgress * _selectedPages.length).ceil()} / ${_selectedPages.length} 页',
             style: TextStyle(
@@ -306,38 +344,62 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
       children: [
         // 文件信息和设置
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(24),
           child: ShadCard(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 文件名
                 Row(
                   children: [
-                    Icon(Icons.insert_drive_file, 
-                      size: 20, 
-                      color: theme.colorScheme.mutedForeground
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _pdfName ?? 'Unknown',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.insert_drive_file_rounded, 
+                        size: 24, 
+                        color: theme.colorScheme.primary
                       ),
                     ),
-                    ShadButton.ghost(
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _pdfName ?? '未知文件',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '共 $_pageCount 页',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: theme.colorScheme.mutedForeground,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ShadButton.outline(
                       onPressed: _pickPdfFile,
-                      leading: const Icon(Icons.swap_horiz, size: 16),
-                      child: const Text('更换'),
+                      size: ShadButtonSize.sm,
+                      leading: const Icon(Icons.swap_horiz_rounded, size: 16),
+                      child: const Text('重选'),
                     ),
                   ],
                 ),
-                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Divider(height: 1, thickness: 0.5),
+                ),
                 
                 // 设置选项
                 Row(
@@ -345,7 +407,8 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
                     // 输出格式
                     Expanded(
                       child: _buildSettingTile(
-                        title: '输出格式',
+                        title: '导出格式',
+                        icon: Icons.image_rounded,
                         child: Row(
                           children: [
                             _buildFormatButton('png', 'PNG'),
@@ -355,11 +418,12 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 24),
+                    const SizedBox(width: 32),
                     // 缩放比例
                     Expanded(
                       child: _buildSettingTile(
-                        title: '图片质量 (${_scale.toStringAsFixed(1)}x)',
+                        title: '渲染质量 (${_scale.toStringAsFixed(1)}x)',
+                        icon: Icons.high_quality_rounded,
                         child: ShadSlider(
                           initialValue: _scale,
                           min: 1.0,
@@ -371,19 +435,21 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 
                 // 输出目录
                 _buildSettingTile(
-                  title: '输出目录',
+                  title: '保存位置',
+                  icon: Icons.folder_special_rounded,
                   child: Row(
                     children: [
                       Expanded(
                         child: Text(
                           _outputDirectory ?? '默认下载文件夹',
                           style: TextStyle(
+                            fontSize: 14,
                             color: _outputDirectory != null 
-                                ? null 
+                                ? theme.colorScheme.foreground 
                                 : theme.colorScheme.mutedForeground,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -391,8 +457,9 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
                       ),
                       ShadButton.secondary(
                         onPressed: _pickOutputDirectory,
-                        leading: const Icon(Icons.folder, size: 16),
-                        child: const Text('选择'),
+                        size: ShadButtonSize.sm,
+                        leading: const Icon(Icons.edit_location_alt_rounded, size: 16),
+                        child: const Text('修改'),
                       ),
                     ],
                   ),
@@ -402,24 +469,27 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
           ),
         ),
         
-        // 页面选择
+        // 页面选择标题
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.fromLTRB(28, 8, 28, 16),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Icon(Icons.checklist_rtl_rounded, size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
               Text(
                 '选择页面 (${_selectedPages.length}/$_pageCount)',
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+              const Spacer(),
               ShadButton.ghost(
                 onPressed: _selectedPages.length == _pageCount 
                     ? _deselectAllPages 
                     : _selectAllPages,
-                child: Text(_selectedPages.length == _pageCount ? '取消全选' : '全选'),
+                size: ShadButtonSize.sm,
+                child: Text(_selectedPages.length == _pageCount ? '取消全选' : '全选所有'),
               ),
             ],
           ),
@@ -429,27 +499,23 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              if (constraints.maxWidth <= 0) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final horizontalPadding = constraints.maxWidth > 32 ? 16.0 : 0.0;
+              if (constraints.maxWidth <= 0) return const SizedBox.shrink();
               return GridView.builder(
-                padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                physics: const BouncingScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 150,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.75,
+                  maxCrossAxisExtent: 160,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.72,
                 ),
                 itemCount: _pageCount,
                 itemBuilder: (context, index) {
                   final pageNum = index + 1;
-                  final isSelected = _selectedPages.contains(pageNum);
-                  
                   return _PageThumbnail(
                     document: _pdfDocument!,
                     pageNumber: pageNum,
-                    isSelected: isSelected,
+                    isSelected: _selectedPages.contains(pageNum),
                     onTap: () => _togglePageSelection(pageNum),
                   );
                 },
@@ -463,33 +529,46 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
 
   Widget _buildFormatButton(String format, String label) {
     final isSelected = _outputFormat == format;
-    return ShadButton(
-      onPressed: () => setState(() => _outputFormat = format),
-      backgroundColor: isSelected 
-          ? ShadTheme.of(context).colorScheme.primary 
-          : ShadTheme.of(context).colorScheme.secondary,
-      foregroundColor: isSelected 
-          ? ShadTheme.of(context).colorScheme.primaryForeground 
-          : ShadTheme.of(context).colorScheme.secondaryForeground,
-      child: Text(label),
+    final theme = ShadTheme.of(context);
+    return Expanded(
+      child: ShadButton(
+        onPressed: () => setState(() => _outputFormat = format),
+        size: ShadButtonSize.sm,
+        backgroundColor: isSelected 
+            ? theme.colorScheme.primary 
+            : theme.colorScheme.muted.withValues(alpha: 0.5),
+        foregroundColor: isSelected 
+            ? theme.colorScheme.primaryForeground 
+            : theme.colorScheme.foreground,
+        child: Text(label),
+      ),
     );
   }
 
   Widget _buildSettingTile({
     required String title,
+    required IconData icon,
     required Widget child,
   }) {
+    final theme = ShadTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            color: ShadTheme.of(context).colorScheme.mutedForeground,
-          ),
+        Row(
+          children: [
+            Icon(icon, size: 14, color: theme.colorScheme.mutedForeground),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.mutedForeground,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         child,
       ],
     );
@@ -526,8 +605,8 @@ class _PageThumbnailState extends State<_PageThumbnail> {
   Future<void> _loadThumbnail() async {
     try {
       final page = await widget.document.getPage(widget.pageNumber);
-      final thumbWidth = 150.0;
-      final thumbHeight = page.height * 150.0 / page.width;
+      final thumbWidth = 200.0;
+      final thumbHeight = page.height * 200.0 / page.width;
       final pageImage = await page.render(
         width: thumbWidth,
         height: thumbHeight,
@@ -542,9 +621,7 @@ class _PageThumbnailState extends State<_PageThumbnail> {
       }
       await page.close();
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -554,49 +631,74 @@ class _PageThumbnailState extends State<_PageThumbnail> {
     
     return GestureDetector(
       onTap: widget.onTap,
-      child: ShadCard(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(8),
-        backgroundColor: widget.isSelected 
-            ? theme.colorScheme.primary.withValues(alpha: 0.1)
-            : null,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: widget.isSelected ? theme.colorScheme.primary : theme.colorScheme.border,
+            width: widget.isSelected ? 2 : 1,
+          ),
+          boxShadow: widget.isSelected ? [
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            )
+          ] : [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 缩略图
             Padding(
               padding: const EdgeInsets.all(4),
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                   : _imageProvider != null
-                      ? Image(image: _imageProvider!, fit: BoxFit.contain)
-                      : const Icon(Icons.broken_image),
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image(image: _imageProvider!, fit: BoxFit.contain),
+                        )
+                      : const Icon(Icons.broken_image_rounded, color: Colors.grey),
             ),
             
-            // 页码
             Positioned(
-              bottom: 4,
-              left: 4,
-              child: ShadBadge.secondary(
-                child: Text('${widget.pageNumber}'),
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.muted.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '${widget.pageNumber}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
             
-            // 选中标记
             if (widget.isSelected)
               Positioned(
-                top: 4,
-                right: 4,
+                top: 0,
+                right: 0,
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primary,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.check,
-                    size: 14,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.check, size: 12, color: Colors.white),
                 ),
               ),
           ],

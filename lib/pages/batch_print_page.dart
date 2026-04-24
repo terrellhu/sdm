@@ -61,7 +61,6 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
           final pageFormat =
               _landscape ? PdfPageFormat(format.height, format.width) : format;
 
-          // Pre-load all images
           final imageProviders = <pw.MemoryImage>[];
           for (final file in _files) {
             imageProviders.add(pw.MemoryImage(await file.readAsBytes()));
@@ -99,7 +98,6 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
       );
     }
 
-    // Determine grid dimensions
     final cols = _imagesPerPage <= 2 ? images.length.clamp(1, 2) : 2;
     final rows = (_imagesPerPage / cols).ceil();
 
@@ -118,7 +116,6 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
 
       final rowCells = <pw.Widget>[
         for (var c = start; c < end; c++) cell(images[c]),
-        // Fill empty slots so row stays balanced
         for (var k = end - start; k < cols; k++)
           pw.Expanded(child: pw.SizedBox()),
       ];
@@ -129,217 +126,265 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
     return pw.Column(children: rowWidgets);
   }
 
-  int get _totalPages => _files.isEmpty
-      ? 0
-      : (_files.length / _imagesPerPage).ceil();
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        leading: ShadIconButton(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: ShadIconButton.ghost(
           onPressed: () => context.go('/'),
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back_ios_new, size: 20, color: theme.colorScheme.foreground),
         ),
-        title: const Text('批量打印'),
+        title: Text(
+          '批量打印',
+          style: TextStyle(
+            color: theme.colorScheme.foreground,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
         actions: [
-          if (_isPrinting)
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
-            child: ShadButton(
-              onPressed: (!_isPrinting && _files.isNotEmpty) ? _print : null,
-              leading: const Icon(Icons.print, size: 16),
-              child: const Text('打印'),
-            ),
+            child: _isPrinting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                : ShadButton(
+                    onPressed: _files.isNotEmpty ? _print : null,
+                    leading: const Icon(Icons.print_rounded, size: 18),
+                    child: const Text('立即打印'),
+                  ),
           ),
         ],
       ),
-      body: Row(
-        children: [
-          // ── Left: file list ──────────────────────────────
-          SizedBox(
-            width: 300,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '图片列表  ${_files.length} 张',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        onPressed: _addFiles,
-                        leading: const Icon(Icons.add, size: 14),
-                        child: const Text('添加'),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: _files.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.add_photo_alternate_outlined,
-                                size: 48,
-                                color: theme.colorScheme.mutedForeground,
-                              ),
-                              const SizedBox(height: 12),
-                              ShadButton(
-                                onPressed: _addFiles,
-                                child: const Text('添加图片'),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ReorderableListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          itemCount: _files.length,
-                          onReorder: (oldIndex, newIndex) {
-                            setState(() {
-                              if (newIndex > oldIndex) newIndex--;
-                              _files.insert(
-                                  newIndex, _files.removeAt(oldIndex));
-                            });
-                          },
-                          itemBuilder: (context, index) => _FileListItem(
-                            key: ValueKey(_files[index].path),
-                            file: _files[index],
-                            index: index,
-                            onRemove: () => _removeFile(index),
-                          ),
-                        ),
-                ),
-              ],
-            ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              theme.colorScheme.background,
+              theme.colorScheme.muted.withValues(alpha: 0.3),
+            ],
           ),
-
-          // ── Divider ──────────────────────────────────────
-          VerticalDivider(
-              width: 1, color: theme.colorScheme.border),
-
-          // ── Right: settings + summary ─────────────────────
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(28),
+        ),
+        child: Row(
+          children: [
+            // ── Left:精致文件列表 ──────────────────────────────
+            Container(
+              width: 320,
+              decoration: BoxDecoration(
+                border: Border(right: BorderSide(color: theme.colorScheme.border, width: 0.5)),
+              ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    '打印设置',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.foreground,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Images per page
-                  _SettingRow(
-                    label: '每页图片数',
-                    child: SegmentedButton<int>(
-                      segments: _layoutOptions
-                          .map((n) => ButtonSegment<int>(
-                                value: n,
-                                label: Text('$n'),
-                              ))
-                          .toList(),
-                      selected: {_imagesPerPage},
-                      onSelectionChanged: (v) =>
-                          setState(() => _imagesPerPage = v.first),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Orientation
-                  _SettingRow(
-                    label: '页面方向',
-                    child: SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(
-                          value: false,
-                          label: Text('纵向'),
-                          icon: Icon(Icons.crop_portrait, size: 15),
-                        ),
-                        ButtonSegment(
-                          value: true,
-                          label: Text('横向'),
-                          icon: Icon(Icons.crop_landscape, size: 15),
-                        ),
-                      ],
-                      selected: {_landscape},
-                      onSelectionChanged: (v) =>
-                          setState(() => _landscape = v.first),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Summary card
-                  ShadCard(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                    child: Row(
                       children: [
                         Text(
-                          '打印摘要',
+                          '待打印图片',
                           style: TextStyle(
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.foreground,
+                            color: theme.colorScheme.mutedForeground,
                           ),
                         ),
-                        const SizedBox(height: 14),
-                        _InfoRow('图片总数', '${_files.length} 张'),
-                        _InfoRow('每页数量', '$_imagesPerPage 张 / 页'),
-                        _InfoRow('总页数', '$_totalPages 页'),
-                        _InfoRow('纸张方向', _landscape ? '横向' : '纵向'),
+                        const Spacer(),
+                        ShadBadge.secondary(
+                          child: Text('${_files.length}', style: const TextStyle(fontSize: 11)),
+                        ),
+                        const SizedBox(width: 8),
+                        ShadIconButton.ghost(
+                          onPressed: _addFiles,
+                          icon: const Icon(Icons.add_circle_outline, size: 22),
+                        ),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 20),
-
-                  // Layout preview
-                  if (_files.isNotEmpty)
-                    _LayoutPreview(
-                      perPage: _imagesPerPage,
-                      files: _files,
-                      landscape: _landscape,
-                    ),
+                  Expanded(
+                    child: _files.isEmpty
+                        ? _buildEmptyState(theme)
+                        : ReorderableListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            itemCount: _files.length,
+                            onReorder: (oldIndex, newIndex) {
+                              setState(() {
+                                if (newIndex > oldIndex) newIndex--;
+                                _files.insert(newIndex, _files.removeAt(oldIndex));
+                              });
+                            },
+                            itemBuilder: (context, index) => _FileListItem(
+                              key: ValueKey(_files[index].path),
+                              file: _files[index],
+                              index: index,
+                              onRemove: () => _removeFile(index),
+                            ),
+                          ),
+                  ),
                 ],
               ),
             ),
+
+            // ── Right: 现代化设置与预览 ─────────────────────
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionHeader(theme, '参数配置', Icons.tune_rounded),
+                    const SizedBox(height: 20),
+                    
+                    // 设置卡片
+                    ShadCard(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          _SettingRow(
+                            label: '每页数量',
+                            icon: Icons.grid_view_rounded,
+                            child: SegmentedButton<int>(
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              segments: _layoutOptions
+                                  .map((n) => ButtonSegment<int>(
+                                        value: n,
+                                        label: Text('$n'),
+                                      ))
+                                  .toList(),
+                              selected: {_imagesPerPage},
+                              onSelectionChanged: (v) => setState(() => _imagesPerPage = v.first),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Divider(height: 1, thickness: 0.5),
+                          ),
+                          _SettingRow(
+                            label: '纸张方向',
+                            icon: Icons.screen_rotation_rounded,
+                            child: SegmentedButton<bool>(
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              segments: const [
+                                ButtonSegment(
+                                  value: false,
+                                  label: Text('纵向'),
+                                  icon: Icon(Icons.crop_portrait_rounded, size: 16),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  label: Text('横向'),
+                                  icon: Icon(Icons.crop_landscape_rounded, size: 16),
+                                ),
+                              ],
+                              selected: {_landscape},
+                              onSelectionChanged: (v) => setState(() => _landscape = v.first),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 40),
+                    
+                    _buildSectionHeader(theme, '版式预览', Icons.auto_awesome_motion_rounded),
+                    const SizedBox(height: 20),
+                    
+                    if (_files.isNotEmpty)
+                      _LayoutPreview(
+                        perPage: _imagesPerPage,
+                        files: _files,
+                        landscape: _landscape,
+                      )
+                    else
+                      Container(
+                        height: 200,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.muted.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: theme.colorScheme.border, width: 1, style: BorderStyle.none),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '添加图片后即可预览',
+                            style: TextStyle(color: theme.colorScheme.mutedForeground),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ShadThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.muted.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.add_photo_alternate_rounded,
+              size: 40,
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '没有待打印的图片',
+            style: TextStyle(color: theme.colorScheme.mutedForeground, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 12),
+          ShadButton.secondary(
+            onPressed: _addFiles,
+            child: const Text('添加图片'),
           ),
         ],
       ),
     );
   }
-}
 
-// ──────────────────────────────────────────────
-// File list item (reorderable)
-// ──────────────────────────────────────────────
+  Widget _buildSectionHeader(ShadThemeData theme, String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.foreground,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _FileListItem extends StatelessWidget {
   final File file;
@@ -358,121 +403,97 @@ class _FileListItem extends StatelessWidget {
     final theme = ShadTheme.of(context);
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
+      margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.card,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.colorScheme.border),
-      ),
-      child: Row(
-        children: [
-          // Drag handle (provided by ReorderableListView)
-          ReorderableDragStartListener(
-            index: index,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              child: Icon(Icons.drag_handle, size: 18, color: Colors.grey),
-            ),
-          ),
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Image.file(
-                file,
-                fit: BoxFit.cover,
-                cacheWidth: 88,
-                errorBuilder: (_, _, _) =>
-                    const Icon(Icons.broken_image, size: 20),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Filename
-          Expanded(
-            child: Text(
-              p.basename(file.path),
-              style: const TextStyle(fontSize: 12),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // Remove
-          IconButton(
-            onPressed: onRemove,
-            icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-            tooltip: '移除',
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
         ],
+        border: Border.all(color: theme.colorScheme.border, width: 0.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Row(
+          children: [
+            ReorderableDragStartListener(
+              index: index,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+                child: Icon(Icons.drag_indicator_rounded, size: 18, color: theme.colorScheme.mutedForeground),
+              ),
+            ),
+            Container(
+              width: 50,
+              height: 50,
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                image: DecorationImage(
+                  image: FileImage(file),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    p.basename(file.path),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '第 ${index + 1} 张',
+                    style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground),
+                  ),
+                ],
+              ),
+            ),
+            ShadIconButton.ghost(
+              onPressed: onRemove,
+              icon: Icon(Icons.delete_outline_rounded, size: 20, color: theme.colorScheme.destructive),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ──────────────────────────────────────────────
-// Setting row helper
-// ──────────────────────────────────────────────
-
 class _SettingRow extends StatelessWidget {
   final String label;
+  final IconData icon;
   final Widget child;
 
-  const _SettingRow({required this.label, required this.child});
+  const _SettingRow({required this.label, required this.icon, required this.child});
 
   @override
   Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
+        Icon(icon, size: 18, color: theme.colorScheme.mutedForeground),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
         ),
+        const Spacer(),
         child,
       ],
     );
   }
 }
-
-// ──────────────────────────────────────────────
-// Info row helper
-// ──────────────────────────────────────────────
-
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _InfoRow(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(label,
-                style:
-                    const TextStyle(color: Colors.grey, fontSize: 13)),
-          ),
-          Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w500, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────
-// Layout preview widget (shows grid diagram)
-// ──────────────────────────────────────────────
 
 class _LayoutPreview extends StatelessWidget {
   final int perPage;
@@ -491,113 +512,82 @@ class _LayoutPreview extends StatelessWidget {
     final cols = perPage <= 2 ? perPage : 2;
     final rows = (perPage / cols).ceil();
 
-    final previewWidth = landscape ? 160.0 : 120.0;
-    final previewHeight = landscape ? 120.0 : 160.0;
+    final previewWidth = landscape ? 180.0 : 140.0;
+    final previewHeight = landscape ? 140.0 : 180.0;
 
     final totalPages = (files.length / perPage).ceil();
 
-    return ShadCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '版式预览',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.foreground,
-            ),
-          ),
-          const SizedBox(height: 14),
-          // 使用 Wrap 或 Column 显示所有页面
-          Wrap(
-            spacing: 16,
-            runSpacing: 24,
-            alignment: WrapAlignment.start,
-            children: List.generate(totalPages, (pageIndex) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: previewWidth,
-                    height: previewHeight,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: theme.colorScheme.border),
-                      borderRadius: BorderRadius.circular(4),
-                      color: theme.colorScheme.muted,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.all(6),
-                    child: Column(
-                      children: List.generate(rows, (r) {
-                        return Expanded(
-                          child: Row(
-                            children: List.generate(cols, (c) {
-                              final cellIndex = r * cols + c;
-                              final fileIndex = pageIndex * perPage + cellIndex;
-                              final hasImage = fileIndex < files.length;
+    return Wrap(
+      spacing: 24,
+      runSpacing: 32,
+      alignment: WrapAlignment.start,
+      children: List.generate(totalPages, (pageIndex) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: previewWidth,
+              height: previewHeight,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 1,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                children: List.generate(rows, (r) {
+                  return Expanded(
+                    child: Row(
+                      children: List.generate(cols, (c) {
+                        final cellIndex = r * cols + c;
+                        final fileIndex = pageIndex * perPage + cellIndex;
+                        final hasImage = fileIndex < files.length;
 
-                              return Expanded(
-                                child: Container(
-                                  margin: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: hasImage
-                                        ? Colors.white
-                                        : theme.colorScheme.primary
-                                            .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(2),
-                                    border: Border.all(
-                                      color: theme.colorScheme.border,
-                                      width: 0.5,
+                        return Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: hasImage ? Colors.grey[100] : theme.colorScheme.muted.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(2),
+                              border: hasImage ? Border.all(color: Colors.black.withValues(alpha: 0.05), width: 0.5) : null,
+                            ),
+                            child: hasImage
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(1),
+                                    child: Image.file(
+                                      files[fileIndex],
+                                      fit: BoxFit.cover,
+                                      cacheWidth: 150,
+                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image_rounded, size: 12, color: Colors.grey),
                                     ),
-                                  ),
-                                  child: hasImage
-                                      ? ClipRRect(
-                                          borderRadius: BorderRadius.circular(1),
-                                          child: Image.file(
-                                            files[fileIndex],
-                                            fit: BoxFit.cover,
-                                            cacheWidth: 100,
-                                            errorBuilder: (_, __, ___) => const Icon(
-                                              Icons.broken_image,
-                                              size: 10,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.image_outlined,
-                                          size: 12,
-                                          color: Colors.grey,
-                                        ),
-                                ),
-                              );
-                            }),
+                                  )
+                                : null,
                           ),
                         );
                       }),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '第 ${pageIndex + 1} 页',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.colorScheme.mutedForeground,
-                    ),
-                  ),
-                ],
-              );
-            }),
-          ),
-        ],
-      ),
+                  );
+                }),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ShadBadge.secondary(
+              child: Text('Page ${pageIndex + 1}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      }),
     );
   }
 }

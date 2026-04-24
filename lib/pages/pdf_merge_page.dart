@@ -42,7 +42,6 @@ class _PdfMergePageState extends State<PdfMergePage> {
         }
       }
     });
-    // Load page counts in background
     for (final entry in _entries) {
       if (entry.pageCount == null) _loadPageCount(entry);
     }
@@ -71,7 +70,6 @@ class _PdfMergePageState extends State<PdfMergePage> {
     });
 
     try {
-      // Count total pages
       int totalPages = 0;
       final pageCounts = <int>[];
       for (final entry in _entries) {
@@ -125,7 +123,6 @@ class _PdfMergePageState extends State<PdfMergePage> {
         await srcDoc.dispose();
       }
 
-      // Save
       final outputDir = _outputDirectory ??
           (await getDownloadsDirectory())?.path ??
           (await getTemporaryDirectory()).path;
@@ -175,53 +172,82 @@ class _PdfMergePageState extends State<PdfMergePage> {
     final theme = ShadTheme.of(context);
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        leading: ShadIconButton(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: ShadIconButton.ghost(
           onPressed: () => context.go('/'),
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back_ios_new, size: 20, color: theme.colorScheme.foreground),
         ),
-        title: const Text('PDF 合并'),
+        title: const Text(
+          'PDF 合并',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
         actions: [
           if (!_isMerging)
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: ShadButton(
                 onPressed: _entries.isNotEmpty ? _merge : null,
-                leading: const Icon(Icons.merge, size: 16),
+                leading: const Icon(Icons.merge_rounded, size: 18),
                 child: const Text('开始合并'),
               ),
             ),
         ],
       ),
-      body: _isMerging ? _buildProgress(theme) : _buildMain(theme),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              theme.colorScheme.background,
+              theme.colorScheme.muted.withValues(alpha: 0.3),
+            ],
+          ),
+        ),
+        child: _isMerging ? _buildProgress(theme) : _buildMain(theme),
+      ),
     );
   }
 
   Widget _buildProgress(ShadThemeData theme) {
     return Center(
-      child: ShadCard(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 100,
-              height: 100,
-              child: CircularProgressIndicator(
-                value: _progress,
-                strokeWidth: 8,
-                backgroundColor: theme.colorScheme.secondary,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 140,
+                height: 140,
+                child: CircularProgressIndicator(
+                  value: _progress,
+                  strokeWidth: 8,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: theme.colorScheme.muted,
+                  color: theme.colorScheme.primary,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text('${(_progress * 100).toInt()}%',
-                style: const TextStyle(
-                    fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(_progressLabel,
-                style: TextStyle(color: theme.colorScheme.mutedForeground)),
-          ],
-        ),
+              Text(
+                '${(_progress * 100).toInt()}%',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Text(
+            '正在合并 PDF 档案...',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: theme.colorScheme.foreground),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _progressLabel,
+            style: TextStyle(color: theme.colorScheme.mutedForeground),
+          ),
+        ],
       ),
     );
   }
@@ -229,53 +255,43 @@ class _PdfMergePageState extends State<PdfMergePage> {
   Widget _buildMain(ShadThemeData theme) {
     return Row(
       children: [
-        // ── Left: file list ────────────────────────────────
-        SizedBox(
-          width: 320,
+        Container(
+          width: 340,
+          decoration: BoxDecoration(
+            border: Border(right: BorderSide(color: theme.colorScheme.border, width: 0.5)),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        'PDF 列表  ${_entries.length} 个  共 $_totalPages 页',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                    Text(
+                      '文件队列',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.mutedForeground,
                       ),
                     ),
-                    ShadButton.outline(
-                      size: ShadButtonSize.sm,
+                    const Spacer(),
+                    ShadBadge.secondary(
+                      child: Text('${_entries.length}', style: const TextStyle(fontSize: 11)),
+                    ),
+                    const SizedBox(width: 8),
+                    ShadIconButton.ghost(
                       onPressed: _addPdfs,
-                      leading: const Icon(Icons.add, size: 14),
-                      child: const Text('添加'),
+                      icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
               Expanded(
                 child: _entries.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.picture_as_pdf,
-                                size: 48,
-                                color: theme.colorScheme.mutedForeground),
-                            const SizedBox(height: 12),
-                            ShadButton(
-                              onPressed: _addPdfs,
-                              child: const Text('添加 PDF 文件'),
-                            ),
-                          ],
-                        ),
-                      )
+                    ? _buildEmptyList(theme)
                     : ReorderableListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                         itemCount: _entries.length,
                         onReorder: (old, neo) {
                           setState(() {
@@ -287,120 +303,111 @@ class _PdfMergePageState extends State<PdfMergePage> {
                           key: ValueKey(_entries[i].file.path),
                           entry: _entries[i],
                           index: i,
-                          onRemove: () =>
-                              setState(() => _entries.removeAt(i)),
+                          onRemove: () => setState(() => _entries.removeAt(i)),
                         ),
                       ),
               ),
             ],
           ),
         ),
-        VerticalDivider(width: 1, color: theme.colorScheme.border),
-
-        // ── Right: settings ───────────────────────────────
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.all(32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('合并设置',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.foreground)),
-                const SizedBox(height: 24),
-
-                // Render quality
-                _buildSettingTile(
-                  theme,
-                  title: '渲染质量',
-                  subtitle: '越高质量越好，速度越慢',
+                _buildSectionHeader(theme, '合并参数', Icons.tune_rounded),
+                const SizedBox(height: 20),
+                
+                ShadCard(
+                  padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      ShadSlider(
-                        initialValue: _renderScale,
-                        min: 1.0,
-                        max: 3.0,
-                        divisions: 4,
-                        onChanged: (v) => setState(() => _renderScale = v),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('快速',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.mutedForeground)),
-                          Text('${_renderScale.toStringAsFixed(1)}x',
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600)),
-                          Text('高清',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.mutedForeground)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Output filename
-                _buildSettingTile(
-                  theme,
-                  title: '输出文件名',
-                  child: ShadInput(
-                    initialValue: _outputFilename,
-                    onChanged: (v) =>
-                        setState(() => _outputFilename = v.isEmpty ? 'merged.pdf' : v),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Output directory
-                _buildSettingTile(
-                  theme,
-                  title: '保存位置',
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _outputDirectory ?? '默认下载文件夹',
-                          style: TextStyle(
-                            color: _outputDirectory != null
-                                ? null
-                                : theme.colorScheme.mutedForeground,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                      _buildSettingTile(
+                        theme,
+                        title: '渲染质量',
+                        icon: Icons.high_quality_rounded,
+                        child: Column(
+                          children: [
+                            ShadSlider(
+                              initialValue: _renderScale,
+                              min: 1.0,
+                              max: 3.0,
+                              divisions: 4,
+                              onChanged: (v) => setState(() => _renderScale = v),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('快速', style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground)),
+                                Text('${_renderScale.toStringAsFixed(1)}x', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                Text('高清', style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground)),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      ShadButton.secondary(
-                        onPressed: _pickOutputDirectory,
-                        leading: const Icon(Icons.folder, size: 16),
-                        child: const Text('选择'),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Divider(height: 1, thickness: 0.5),
+                      ),
+                      _buildSettingTile(
+                        theme,
+                        title: '输出文件名',
+                        icon: Icons.edit_note_rounded,
+                        child: ShadInput(
+                          initialValue: _outputFilename,
+                          placeholder: const Text('请输入文件名'),
+                          onChanged: (v) => setState(() => _outputFilename = v.isEmpty ? 'merged.pdf' : v),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Divider(height: 1, thickness: 0.5),
+                      ),
+                      _buildSettingTile(
+                        theme,
+                        title: '保存位置',
+                        icon: Icons.folder_special_rounded,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _outputDirectory ?? '默认下载文件夹',
+                                style: TextStyle(
+                                  color: _outputDirectory != null ? theme.colorScheme.foreground : theme.colorScheme.mutedForeground,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            ShadButton.secondary(
+                              onPressed: _pickOutputDirectory,
+                              size: ShadButtonSize.sm,
+                              leading: const Icon(Icons.edit_location_alt_rounded, size: 16),
+                              child: const Text('更改'),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 28),
-
-                // Summary
+                
+                const SizedBox(height: 40),
+                
+                _buildSectionHeader(theme, '合并摘要', Icons.assignment_rounded),
+                const SizedBox(height: 20),
+                
                 ShadCard(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(24),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('合并摘要',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.foreground)),
-                      const SizedBox(height: 12),
-                      _InfoRow('文件数量', '${_entries.length} 个 PDF'),
-                      _InfoRow('总页数', '$_totalPages 页'),
-                      _InfoRow('输出文件', _outputFilename),
+                      _InfoRow(icon: Icons.file_copy_rounded, label: '文档总数', value: '${_entries.length} 个 PDF'),
+                      const SizedBox(height: 16),
+                      _InfoRow(icon: Icons.pages_rounded, label: '累计页数', value: '$_totalPages 页'),
+                      const SizedBox(height: 16),
+                      _InfoRow(icon: Icons.save_rounded, label: '目标名称', value: _outputFilename),
                     ],
                   ),
                 ),
@@ -412,31 +419,52 @@ class _PdfMergePageState extends State<PdfMergePage> {
     );
   }
 
-  Widget _buildSettingTile(
-    ShadThemeData theme, {
-    required String title,
-    String? subtitle,
-    required Widget child,
-  }) {
+  Widget _buildEmptyList(ShadThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.picture_as_pdf_rounded, size: 48, color: theme.colorScheme.mutedForeground.withValues(alpha: 0.5)),
+          const SizedBox(height: 16),
+          ShadButton.secondary(
+            onPressed: _addPdfs,
+            child: const Text('添加 PDF'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(ShadThemeData theme, String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: theme.colorScheme.foreground),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingTile(ShadThemeData theme, {required String title, required IconData icon, required Widget child}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500)),
-        if (subtitle != null)
-          Text(subtitle,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.mutedForeground)),
-        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(icon, size: 14, color: theme.colorScheme.mutedForeground),
+            const SizedBox(width: 6),
+            Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.mutedForeground)),
+          ],
+        ),
+        const SizedBox(height: 12),
         child,
       ],
     );
   }
 }
-
-// ──────────────────────────────────────────────
 
 class _PdfEntry {
   final File file;
@@ -463,82 +491,89 @@ class _PdfListItem extends StatelessWidget {
     final theme = ShadTheme.of(context);
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
+      margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.card,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.colorScheme.border),
-      ),
-      child: Row(
-        children: [
-          ReorderableDragStartListener(
-            index: index,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              child: Icon(Icons.drag_handle, size: 18, color: Colors.grey),
-            ),
-          ),
-          Container(
-            width: 36,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(entry.name,
-                    style: const TextStyle(fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis),
-                if (entry.pageCount != null)
-                  Text('${entry.pageCount} 页',
-                      style: const TextStyle(
-                          fontSize: 11, color: Colors.grey)),
-                if (entry.pageCount == null)
-                  const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: onRemove,
-            icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-            tooltip: '移除',
-          ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.border, width: 0.5),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2)),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Row(
+          children: [
+            ReorderableDragStartListener(
+              index: index,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+                child: Icon(Icons.drag_indicator_rounded, size: 18, color: theme.colorScheme.mutedForeground),
+              ),
+            ),
+            Container(
+              width: 38,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.red, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(entry.name,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  if (entry.pageCount != null)
+                    Text('${entry.pageCount} 页', style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground))
+                  else
+                    const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5)),
+                ],
+              ),
+            ),
+            ShadIconButton.ghost(
+              onPressed: onRemove,
+              icon: Icon(Icons.delete_outline_rounded, size: 18, color: theme.colorScheme.destructive),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _InfoRow extends StatelessWidget {
+  final IconData icon;
   final String label;
   final String value;
-  const _InfoRow(this.label, this.value);
+
+  const _InfoRow({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          SizedBox(
-              width: 80,
-              child: Text(label,
-                  style: const TextStyle(color: Colors.grey, fontSize: 13))),
-          Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w500, fontSize: 13)),
-        ],
-      ),
+    final theme = ShadTheme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: theme.colorScheme.mutedForeground),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(color: theme.colorScheme.mutedForeground, fontSize: 13),
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        ),
+      ],
     );
   }
 }
