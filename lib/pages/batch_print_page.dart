@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path/path.dart' as p;
+import 'package:image/image.dart' as img;
 
 class BatchPrintPage extends StatefulWidget {
   final List<File>? initialFiles;
@@ -22,6 +25,12 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
   int _imagesPerPage = 1;
   bool _landscape = false;
   bool _isPrinting = false;
+
+  // Image processing state
+  final Map<String, int> _rotations = {}; // file path -> degrees: 0/90/180/270
+  bool _grayscale = false;
+  bool _fitFill = false; // false=contain, true=fill
+  int _margin = 12;
 
   static const _layoutOptions = [1, 2, 4, 6];
 
@@ -49,7 +58,32 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
     });
   }
 
-  void _removeFile(int index) => setState(() => _files.removeAt(index));
+  void _removeFile(int index) {
+    final path = _files[index].path;
+    setState(() {
+      _files.removeAt(index);
+      _rotations.remove(path);
+    });
+  }
+
+  void _rotateFile(int index, bool clockwise) {
+    final path = _files[index].path;
+    setState(() {
+      final current = _rotations[path] ?? 0;
+      _rotations[path] = (current + (clockwise ? 90 : -90) + 360) % 360;
+    });
+  }
+
+  Future<Uint8List> _processImage(File file) async {
+    final bytes = await file.readAsBytes();
+    final rotation = _rotations[file.path] ?? 0;
+    if (rotation == 0 && !_grayscale) return bytes;
+    var decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+    if (rotation != 0) decoded = img.copyRotate(decoded, angle: rotation);
+    if (_grayscale) decoded = img.grayscale(decoded);
+    return Uint8List.fromList(img.encodePng(decoded));
+  }
 
   Future<void> _print() async {
     if (_files.isEmpty) return;
@@ -63,7 +97,7 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
 
           final imageProviders = <pw.MemoryImage>[];
           for (final file in _files) {
-            imageProviders.add(pw.MemoryImage(await file.readAsBytes()));
+            imageProviders.add(pw.MemoryImage(await _processImage(file)));
           }
 
           final doc = pw.Document();
@@ -77,7 +111,7 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
             doc.addPage(
               pw.Page(
                 pageFormat: pageFormat,
-                margin: const pw.EdgeInsets.all(12),
+                margin: pw.EdgeInsets.all(_margin.toDouble()),
                 build: (_) => _buildPageLayout(slice),
               ),
             );
@@ -92,9 +126,10 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
   }
 
   pw.Widget _buildPageLayout(List<pw.MemoryImage> images) {
+    final fitMode = _fitFill ? pw.BoxFit.fill : pw.BoxFit.contain;
     if (images.length == 1) {
       return pw.Center(
-        child: pw.Image(images[0], fit: pw.BoxFit.contain),
+        child: pw.Image(images[0], fit: fitMode),
       );
     }
 
@@ -104,7 +139,7 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
     pw.Widget cell(pw.MemoryImage img) => pw.Expanded(
           child: pw.Padding(
             padding: const pw.EdgeInsets.all(4),
-            child: pw.Image(img, fit: pw.BoxFit.contain),
+            child: pw.Image(img, fit: fitMode),
           ),
         );
 
@@ -125,7 +160,6 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
 
     return pw.Column(children: rowWidgets);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +212,7 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
         ),
         child: Row(
           children: [
-            // ── Left:精致文件列表 ──────────────────────────────
+            // ── Left: file list ──────────────────────────────
             Container(
               width: 320,
               decoration: BoxDecoration(
@@ -227,7 +261,10 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
                               key: ValueKey(_files[index].path),
                               file: _files[index],
                               index: index,
+                              rotation: _rotations[_files[index].path] ?? 0,
                               onRemove: () => _removeFile(index),
+                              onRotateLeft: () => _rotateFile(index, false),
+                              onRotateRight: () => _rotateFile(index, true),
                             ),
                           ),
                   ),
@@ -235,7 +272,7 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
               ),
             ),
 
-            // ── Right: 现代化设置与预览 ─────────────────────
+            // ── Right: settings & preview ─────────────────────
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -245,8 +282,7 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
                   children: [
                     _buildSectionHeader(theme, '参数配置', Icons.tune_rounded),
                     const SizedBox(height: 20),
-                    
-                    // 设置卡片
+
                     ShadCard(
                       padding: const EdgeInsets.all(24),
                       child: Column(
@@ -295,20 +331,74 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
                               onSelectionChanged: (v) => setState(() => _landscape = v.first),
                             ),
                           ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Divider(height: 1, thickness: 0.5),
+                          ),
+                          _SettingRow(
+                            label: '适配模式',
+                            icon: Icons.fit_screen_rounded,
+                            child: SegmentedButton<bool>(
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              segments: const [
+                                ButtonSegment(value: false, label: Text('保持比例')),
+                                ButtonSegment(value: true, label: Text('铺满')),
+                              ],
+                              selected: {_fitFill},
+                              onSelectionChanged: (v) => setState(() => _fitFill = v.first),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Divider(height: 1, thickness: 0.5),
+                          ),
+                          _SettingRow(
+                            label: '页边距',
+                            icon: Icons.margin_rounded,
+                            child: SegmentedButton<int>(
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              segments: const [
+                                ButtonSegment(value: 0, label: Text('无')),
+                                ButtonSegment(value: 8, label: Text('小')),
+                                ButtonSegment(value: 12, label: Text('中')),
+                                ButtonSegment(value: 24, label: Text('大')),
+                              ],
+                              selected: {_margin},
+                              onSelectionChanged: (v) => setState(() => _margin = v.first),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Divider(height: 1, thickness: 0.5),
+                          ),
+                          _SettingRow(
+                            label: '灰度打印',
+                            icon: Icons.invert_colors_rounded,
+                            child: Switch(
+                              value: _grayscale,
+                              onChanged: (v) => setState(() => _grayscale = v),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 40),
-                    
+
                     _buildSectionHeader(theme, '版式预览', Icons.auto_awesome_motion_rounded),
                     const SizedBox(height: 20),
-                    
+
                     if (_files.isNotEmpty)
                       _LayoutPreview(
                         perPage: _imagesPerPage,
                         files: _files,
                         landscape: _landscape,
+                        rotations: Map.from(_rotations),
+                        grayscale: _grayscale,
                       )
                     else
                       Container(
@@ -317,7 +407,6 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
                         decoration: BoxDecoration(
                           color: theme.colorScheme.muted.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: theme.colorScheme.border, width: 1, style: BorderStyle.none),
                         ),
                         child: Center(
                           child: Text(
@@ -389,13 +478,19 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
 class _FileListItem extends StatelessWidget {
   final File file;
   final int index;
+  final int rotation;
   final VoidCallback onRemove;
+  final VoidCallback onRotateLeft;
+  final VoidCallback onRotateRight;
 
   const _FileListItem({
     super.key,
     required this.file,
     required this.index,
+    required this.rotation,
     required this.onRemove,
+    required this.onRotateLeft,
+    required this.onRotateRight,
   });
 
   @override
@@ -427,15 +522,25 @@ class _FileListItem extends StatelessWidget {
                 child: Icon(Icons.drag_indicator_rounded, size: 18, color: theme.colorScheme.mutedForeground),
               ),
             ),
+            // Thumbnail with rotation preview
             Container(
               width: 50,
               height: 50,
               margin: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                image: DecorationImage(
-                  image: FileImage(file),
-                  fit: BoxFit.cover,
+                color: theme.colorScheme.muted.withValues(alpha: 0.3),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Transform.rotate(
+                  angle: rotation * math.pi / 180,
+                  child: Image.file(
+                    file,
+                    fit: BoxFit.cover,
+                    cacheWidth: 150,
+                    errorBuilder: (_, _, _) => const Icon(Icons.broken_image_rounded, size: 20, color: Colors.grey),
+                  ),
                 ),
               ),
             ),
@@ -452,11 +557,21 @@ class _FileListItem extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '第 ${index + 1} 张',
+                    rotation == 0
+                        ? '第 ${index + 1} 张'
+                        : '第 ${index + 1} 张 · 旋转 $rotation°',
                     style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground),
                   ),
                 ],
               ),
+            ),
+            ShadIconButton.ghost(
+              onPressed: onRotateLeft,
+              icon: Icon(Icons.rotate_left_rounded, size: 18, color: theme.colorScheme.mutedForeground),
+            ),
+            ShadIconButton.ghost(
+              onPressed: onRotateRight,
+              icon: Icon(Icons.rotate_right_rounded, size: 18, color: theme.colorScheme.mutedForeground),
             ),
             ShadIconButton.ghost(
               onPressed: onRemove,
@@ -499,12 +614,23 @@ class _LayoutPreview extends StatelessWidget {
   final int perPage;
   final List<File> files;
   final bool landscape;
+  final Map<String, int> rotations;
+  final bool grayscale;
 
   const _LayoutPreview({
     required this.perPage,
     required this.files,
     required this.landscape,
+    required this.rotations,
+    required this.grayscale,
   });
+
+  static const _grayscaleMatrix = ColorFilter.matrix([
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0,      0,      0,      1, 0,
+  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -553,6 +679,7 @@ class _LayoutPreview extends StatelessWidget {
                         final cellIndex = r * cols + c;
                         final fileIndex = pageIndex * perPage + cellIndex;
                         final hasImage = fileIndex < files.length;
+                        final rotation = hasImage ? (rotations[files[fileIndex].path] ?? 0) : 0;
 
                         return Expanded(
                           child: Container(
@@ -565,12 +692,7 @@ class _LayoutPreview extends StatelessWidget {
                             child: hasImage
                                 ? ClipRRect(
                                     borderRadius: BorderRadius.circular(1),
-                                    child: Image.file(
-                                      files[fileIndex],
-                                      fit: BoxFit.cover,
-                                      cacheWidth: 150,
-                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image_rounded, size: 12, color: Colors.grey),
-                                    ),
+                                    child: _buildPreviewImage(files[fileIndex], rotation),
                                   )
                                 : null,
                           ),
@@ -589,5 +711,27 @@ class _LayoutPreview extends StatelessWidget {
         );
       }),
     );
+  }
+
+  Widget _buildPreviewImage(File file, int rotation) {
+    Widget image = Image.file(
+      file,
+      fit: BoxFit.cover,
+      cacheWidth: 150,
+      errorBuilder: (_, _, _) => const Icon(Icons.broken_image_rounded, size: 12, color: Colors.grey),
+    );
+
+    if (rotation != 0) {
+      image = Transform.rotate(
+        angle: rotation * math.pi / 180,
+        child: image,
+      );
+    }
+
+    if (grayscale) {
+      image = ColorFiltered(colorFilter: _grayscaleMatrix, child: image);
+    }
+
+    return image;
   }
 }
