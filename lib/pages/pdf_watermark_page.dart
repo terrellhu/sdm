@@ -1,17 +1,18 @@
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart' hide Image;
 import 'package:flutter/material.dart' show Image;
 import 'package:file_picker/file_picker.dart';
-import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:pdf_render/pdf_render.dart';
-import 'package:pdf/pdf.dart' hide PdfDocument;
-import 'package:pdf/widgets.dart' as pw;
+import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../utils/app_prefs.dart';
+import '../utils/file_utils.dart';
+import '../utils/watermark_painter.dart';
+import '../widgets/result_dialog.dart';
+import '../widgets/tool_widgets.dart';
 
 class PdfWatermarkPage extends StatefulWidget {
   const PdfWatermarkPage({super.key});
@@ -25,16 +26,16 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
   String? _pdfName;
   int _pageCount = 0;
 
-  // Watermark settings
   String _watermarkText = '仅供参考';
-  double _fontSize = 60;
-  double _opacity = 0.3;
+  double _fontSize = 42;
+  double _opacity = 0.25;
   bool _diagonal = true;
+  bool _tiled = true;
   Color _color = Colors.red;
-  String? _outputDirectory;
+  String? _outputDirectory = AppPrefs.outputDir;
 
-  // Preview
   ImageProvider? _previewImage;
+  double _previewPageWidthPt = 595;
   bool _isLoadingPreview = false;
 
   bool _isSaving = false;
@@ -48,6 +49,14 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
     '橙色': Colors.orange,
     '绿色': Colors.green,
   };
+
+  WatermarkStyle get _style => WatermarkStyle(
+        text: _watermarkText,
+        color: _color.withValues(alpha: _opacity),
+        fontSizePt: _fontSize,
+        tiled: _tiled,
+        diagonal: _diagonal,
+      );
 
   Future<void> _pickPdf() async {
     final result = await FilePicker.platform.pickFiles(
@@ -68,7 +77,6 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
       _pageCount = count;
       _previewImage = null;
     });
-
     _loadPreview();
   }
 
@@ -88,10 +96,12 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
       );
       final flImg = await rendered.createImageIfNotAvailable();
       final bd = await flImg.toByteData(format: ImageByteFormat.png);
+      final pageWidthPt = page.width;
       await doc.dispose();
       if (bd != null && mounted) {
         setState(() {
           _previewImage = MemoryImage(Uint8List.view(bd.buffer));
+          _previewPageWidthPt = pageWidthPt;
           _isLoadingPreview = false;
         });
       }
@@ -102,7 +112,10 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
 
   Future<void> _pickOutputDirectory() async {
     final result = await FilePicker.platform.getDirectoryPath();
-    if (result != null) setState(() => _outputDirectory = result);
+    if (result != null) {
+      setState(() => _outputDirectory = result);
+      AppPrefs.outputDir = result;
+    }
   }
 
   Future<void> _save() async {
@@ -113,96 +126,46 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
     });
 
     try {
-      final srcDoc = await PdfDocument.openFile(_pdfFile!.path);
-      final outDoc = pw.Document();
+      final doc = sf.PdfDocument(inputBytes: await _pdfFile!.readAsBytes());
+      final style = _style;
+      final count = doc.pages.count;
+      final cache = <String, Uint8List>{};
 
-      for (int pi = 1; pi <= srcDoc.pageCount; pi++) {
-        final page = await srcDoc.getPage(pi);
-        final w = (page.width * 1.5).toInt();
-        final h = (page.height * 1.5).toInt();
-        final rendered = await page.render(
-          width: w,
-          height: h,
-          fullWidth: page.width * 1.5,
-          fullHeight: page.height * 1.5,
+      for (int i = 0; i < count; i++) {
+        final page = doc.pages[i];
+        final size = page.size;
+        final key = '${size.width.round()}x${size.height.round()}';
+        final png = cache[key] ??= await buildWatermarkPng(
+          pageWidthPt: size.width,
+          pageHeightPt: size.height,
+          style: style,
         );
-        final flImg = await rendered.createImageIfNotAvailable();
-        final bd = await flImg.toByteData(format: ImageByteFormat.png);
-
-        if (bd != null) {
-          final bgImage = pw.MemoryImage(Uint8List.view(bd.buffer));
-          final pdfColor = PdfColor(_color.r, _color.g, _color.b, _opacity);
-
-          outDoc.addPage(
-            pw.Page(
-              pageFormat: PdfPageFormat(
-                page.width * PdfPageFormat.point,
-                page.height * PdfPageFormat.point,
-              ),
-              margin: pw.EdgeInsets.zero,
-              build: (_) => pw.Stack(
-                children: [
-                  pw.Positioned.fill(
-                    child: pw.Image(bgImage, fit: pw.BoxFit.fill),
-                  ),
-                  pw.Center(
-                    child: pw.Transform.rotate(
-                      angle: _diagonal ? -math.pi / 4 : 0,
-                      child: pw.Text(
-                        _watermarkText,
-                        style: pw.TextStyle(
-                          fontSize: _fontSize,
-                          color: pdfColor,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        setState(() => _saveProgress = pi / srcDoc.pageCount);
+        page.graphics
+            .drawImage(sf.PdfBitmap(png), Rect.fromLTWH(0, 0, size.width, size.height));
+        setState(() => _saveProgress = (i + 1) / count);
       }
-      await srcDoc.dispose();
 
-      final outputDir = _outputDirectory ??
-          (await getDownloadsDirectory())?.path ??
-          (await getTemporaryDirectory()).path;
+      final bytes = await doc.save();
+      doc.dispose();
 
+      final dir = await resolveOutputDir(preferred: _outputDirectory);
       final baseName = p.basenameWithoutExtension(_pdfName ?? 'document');
-      final outPath = p.join(outputDir, '${baseName}_watermark.pdf');
-      await File(outPath).writeAsBytes(await outDoc.save());
+      final outPath = uniquePath(dir, '${baseName}_水印', '.pdf');
+      await File(outPath).writeAsBytes(bytes);
 
+      if (!mounted) return;
       setState(() => _isSaving = false);
-      _showSuccess(outPath);
+      showResultDialog(
+        context,
+        title: '水印已添加',
+        message: '已处理 $count 页并叠加水印，原有文字与图形保持可选、可搜索。\n\n$outPath',
+        outputPath: outPath,
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isSaving = false);
-      _showError('保存失败：$e');
+      showErrorDialog(context, '保存失败：$e');
     }
-  }
-
-  void _showSuccess(String path) {
-    showShadDialog(
-      context: context,
-      builder: (ctx) => ShadDialog.alert(
-        title: const Text('保存成功'),
-        description: Text('已处理 $_pageCount 页并添加水印\n\n保存至：\n$path'),
-        actions: [
-          ShadButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('确定')),
-        ],
-      ),
-    );
-  }
-
-  void _showError(String msg) {
-    ShadToaster.of(context).show(
-      ShadToast(title: const Text('错误'), description: Text(msg)),
-    );
   }
 
   @override
@@ -211,17 +174,9 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: ShadIconButton.ghost(
-          onPressed: () => context.go('/'),
-          icon: Icon(Icons.arrow_back_ios_new, size: 20, color: theme.colorScheme.foreground),
-        ),
-        title: const Text(
-          'PDF 加水印',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-        ),
+      appBar: toolAppBar(
+        context,
+        title: 'PDF 加水印',
         actions: [
           if (_isSaving)
             Padding(
@@ -256,15 +211,19 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
       ),
       body: Row(
         children: [
-          // ── Left: 精致设置面板 ────────────────────────────
           Container(
             width: 360,
             decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: theme.colorScheme.border, width: 0.5)),
+              border: Border(
+                  right:
+                      BorderSide(color: theme.colorScheme.border, width: 0.5)),
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [theme.colorScheme.background, theme.colorScheme.muted.withValues(alpha: 0.1)],
+                colors: [
+                  theme.colorScheme.background,
+                  theme.colorScheme.muted.withValues(alpha: 0.1)
+                ],
               ),
             ),
             child: SingleChildScrollView(
@@ -273,7 +232,7 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionHeader(theme, '源文件', Icons.picture_as_pdf_rounded),
+                  const SectionHeader('源文件', Icons.picture_as_pdf_rounded),
                   const SizedBox(height: 16),
                   ShadCard(
                     padding: const EdgeInsets.all(16),
@@ -293,7 +252,8 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                                   color: Colors.red.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.red, size: 20),
+                                child: const Icon(Icons.picture_as_pdf_rounded,
+                                    color: Colors.red, size: 20),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -301,10 +261,15 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(_pdfName ?? '',
-                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13),
                                         overflow: TextOverflow.ellipsis),
                                     Text('$_pageCount 页',
-                                        style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground)),
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            color: theme
+                                                .colorScheme.mutedForeground)),
                                   ],
                                 ),
                               ),
@@ -315,11 +280,9 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                             ],
                           ),
                   ),
-                  
                   const SizedBox(height: 32),
-                  _buildSectionHeader(theme, '水印样式', Icons.style_rounded),
+                  const SectionHeader('水印样式', Icons.style_rounded),
                   const SizedBox(height: 16),
-                  
                   ShadCard(
                     padding: const EdgeInsets.all(20),
                     child: Column(
@@ -329,16 +292,17 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                         ShadInput(
                           initialValue: _watermarkText,
                           placeholder: const Text('请输入水印文字'),
-                          onChanged: (v) => setState(() => _watermarkText = v.isEmpty ? ' ' : v),
+                          onChanged: (v) =>
+                              setState(() => _watermarkText = v),
                         ),
                         const SizedBox(height: 24),
-                        
                         _buildLabel('颜色预设'),
                         Wrap(
                           spacing: 10,
                           runSpacing: 10,
                           children: _presetColors.entries.map((entry) {
-                            final isSelected = _color.toARGB32() == entry.value.toARGB32();
+                            final isSelected =
+                                _color.toARGB32() == entry.value.toARGB32();
                             return GestureDetector(
                               onTap: () => setState(() => _color = entry.value),
                               child: AnimatedContainer(
@@ -349,23 +313,36 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                                   color: entry.value,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+                                    color: isSelected
+                                        ? theme.colorScheme.primary
+                                        : Colors.transparent,
                                     width: 2.5,
                                   ),
-                                  boxShadow: isSelected ? [BoxShadow(color: entry.value.withValues(alpha: 0.4), blurRadius: 8)] : null,
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                              color: entry.value
+                                                  .withValues(alpha: 0.4),
+                                              blurRadius: 8)
+                                        ]
+                                      : null,
                                 ),
-                                child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 16) : null,
+                                child: isSelected
+                                    ? const Icon(Icons.check,
+                                        color: Colors.white, size: 16)
+                                    : null,
                               ),
                             );
                           }).toList(),
                         ),
                         const SizedBox(height: 24),
-                        
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             _buildLabel('透明度'),
-                            Text('${(_opacity * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text('${(_opacity * 100).toInt()}%',
+                                style: const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.bold)),
                           ],
                         ),
                         ShadSlider(
@@ -376,89 +353,65 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                           onChanged: (v) => setState(() => _opacity = v),
                         ),
                         const SizedBox(height: 20),
-                        
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             _buildLabel('字体大小'),
-                            Text('${_fontSize.toInt()} pt', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text('${_fontSize.toInt()} pt',
+                                style: const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.bold)),
                           ],
                         ),
                         ShadSlider(
                           initialValue: _fontSize,
-                          min: 20,
-                          max: 150,
+                          min: 16,
+                          max: 120,
                           divisions: 26,
                           onChanged: (v) => setState(() => _fontSize = v),
                         ),
-                        const SizedBox(height: 20),
-                        
-                        Row(
-                          children: [
-                            ShadSwitch(
-                              value: _diagonal,
-                              onChanged: (v) => setState(() => _diagonal = v),
-                            ),
-                            const SizedBox(width: 10),
-                            const Text('45° 倾斜', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                          ],
-                        ),
+                        const SizedBox(height: 16),
+                        _buildToggle('平铺整页', _tiled,
+                            (v) => setState(() => _tiled = v)),
+                        const SizedBox(height: 8),
+                        _buildToggle('45° 倾斜', _diagonal,
+                            (v) => setState(() => _diagonal = v)),
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 32),
-                  _buildSectionHeader(theme, '保存设置', Icons.folder_open_rounded),
+                  const SectionHeader('保存设置', Icons.folder_open_rounded),
                   const SizedBox(height: 16),
-                  
                   ShadCard(
                     padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('保存目录', style: TextStyle(fontSize: 11, color: theme.colorScheme.mutedForeground)),
-                              const SizedBox(height: 4),
-                              Text(
-                                _outputDirectory ?? '默认下载文件夹',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: _outputDirectory != null ? theme.colorScheme.foreground : theme.colorScheme.mutedForeground,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        ShadIconButton.secondary(
-                          onPressed: _pickOutputDirectory,
-                          icon: const Icon(Icons.edit_location_alt_rounded, size: 18),
-                        ),
-                      ],
+                    child: OutputDirRow(
+                      directory: _outputDirectory,
+                      onPick: _pickOutputDirectory,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-
-          // ── Right: 现代化预览区 ─────────────────────────────
           Expanded(
             child: Container(
               color: theme.colorScheme.muted.withValues(alpha: 0.2),
               child: Column(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
                     color: theme.colorScheme.background.withValues(alpha: 0.5),
                     child: Row(
                       children: [
-                        Icon(Icons.visibility_rounded, size: 16, color: theme.colorScheme.mutedForeground),
+                        Icon(Icons.visibility_rounded,
+                            size: 16,
+                            color: theme.colorScheme.mutedForeground),
                         const SizedBox(width: 8),
-                        Text('实时预览 (第 1 页)', style: TextStyle(color: theme.colorScheme.mutedForeground, fontSize: 13, fontWeight: FontWeight.w500)),
+                        Text('实时预览 (第 1 页)',
+                            style: TextStyle(
+                                color: theme.colorScheme.mutedForeground,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500)),
                       ],
                     ),
                   ),
@@ -472,11 +425,8 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
                                   padding: const EdgeInsets.all(40),
                                   child: _PreviewWidget(
                                     pageImage: _previewImage,
-                                    watermarkText: _watermarkText,
-                                    fontSize: _fontSize,
-                                    opacity: _opacity,
-                                    color: _color,
-                                    diagonal: _diagonal,
+                                    style: _style,
+                                    pageWidthPt: _previewPageWidthPt,
                                   ),
                                 ),
                               ),
@@ -490,6 +440,17 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
     );
   }
 
+  Widget _buildToggle(String label, bool value, ValueChanged<bool> onChanged) {
+    return Row(
+      children: [
+        ShadSwitch(value: value, onChanged: onChanged),
+        const SizedBox(width: 10),
+        Text(label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
   Widget _buildEmptyPreview(ShadThemeData theme) {
     return Center(
       child: Column(
@@ -500,101 +461,80 @@ class _PdfWatermarkPageState extends State<PdfWatermarkPage> {
             decoration: BoxDecoration(
               color: theme.colorScheme.background,
               shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)
+              ],
             ),
-            child: Icon(Icons.water_drop_rounded, size: 64, color: theme.colorScheme.mutedForeground.withValues(alpha: 0.3)),
+            child: Icon(Icons.water_drop_rounded,
+                size: 64,
+                color: theme.colorScheme.mutedForeground.withValues(alpha: 0.3)),
           ),
           const SizedBox(height: 24),
-          Text('暂无预览', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.mutedForeground)),
+          Text('暂无预览',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.mutedForeground)),
           const SizedBox(height: 8),
-          Text('请先选择 PDF 文件以配置水印', style: TextStyle(color: theme.colorScheme.mutedForeground)),
+          Text('请先选择 PDF 文件以配置水印',
+              style: TextStyle(color: theme.colorScheme.mutedForeground)),
         ],
       ),
-    );
-  }
-
-  Widget _buildSectionHeader(ShadThemeData theme, String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-      ],
     );
   }
 
   Widget _buildLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+      child: Text(text,
+          style: const TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
     );
   }
 }
 
 class _PreviewWidget extends StatelessWidget {
   final ImageProvider? pageImage;
-  final String watermarkText;
-  final double fontSize;
-  final double opacity;
-  final Color color;
-  final bool diagonal;
+  final WatermarkStyle style;
+  final double pageWidthPt;
 
   const _PreviewWidget({
     required this.pageImage,
-    required this.watermarkText,
-    required this.fontSize,
-    required this.opacity,
-    required this.color,
-    required this.diagonal,
+    required this.style,
+    required this.pageWidthPt,
   });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final previewFontSize = fontSize * (constraints.maxWidth / 595.0);
-
-        return AspectRatio(
-          aspectRatio: 1 / 1.414, // A4 ratio
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(4),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 30,
-                  offset: const Offset(0, 10),
-                )
-              ],
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (pageImage != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image(image: pageImage!, fit: BoxFit.contain),
-                  ),
-                Center(
-                  child: Transform.rotate(
-                    angle: diagonal ? -math.pi / 4 : 0,
-                    child: Text(
-                      watermarkText,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: previewFontSize.clamp(8, 120),
-                        fontWeight: FontWeight.bold,
-                        color: color.withValues(alpha: opacity),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+    return AspectRatio(
+      aspectRatio: 1 / 1.414,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 30,
+                offset: const Offset(0, 10))
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (pageImage != null)
+                Image(image: pageImage!, fit: BoxFit.contain),
+              CustomPaint(
+                painter:
+                    WatermarkPreviewPainter(style, pageWidthPoints: pageWidthPt),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

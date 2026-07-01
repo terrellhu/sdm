@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +9,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path/path.dart' as p;
-import 'package:image/image.dart' as img;
+import '../utils/image_tasks.dart';
 
 class BatchPrintPage extends StatefulWidget {
   final List<File>? initialFiles;
@@ -78,11 +78,20 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
     final bytes = await file.readAsBytes();
     final rotation = _rotations[file.path] ?? 0;
     if (rotation == 0 && !_grayscale) return bytes;
-    var decoded = img.decodeImage(bytes);
-    if (decoded == null) return bytes;
-    if (rotation != 0) decoded = img.copyRotate(decoded, angle: rotation);
-    if (_grayscale) decoded = img.grayscale(decoded);
-    return Uint8List.fromList(img.encodePng(decoded));
+    try {
+      final result = await compute(
+        runImageOp,
+        ImageOp(
+          bytes: bytes,
+          format: 'png',
+          rotation: rotation,
+          grayscale: _grayscale,
+        ),
+      );
+      return result.bytes;
+    } catch (_) {
+      return bytes;
+    }
   }
 
   Future<void> _print() async {
@@ -251,9 +260,8 @@ class _BatchPrintPageState extends State<BatchPrintPage> {
                         : ReorderableListView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             itemCount: _files.length,
-                            onReorder: (oldIndex, newIndex) {
+                            onReorderItem: (oldIndex, newIndex) {
                               setState(() {
-                                if (newIndex > oldIndex) newIndex--;
                                 _files.insert(newIndex, _files.removeAt(oldIndex));
                               });
                             },

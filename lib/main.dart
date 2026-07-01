@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'router/app_router.dart';
+import 'utils/app_prefs.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppPrefs.init();
   runApp(const MyApp());
 }
 
@@ -11,11 +14,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ShadApp.router(
-      title: 'SDM 工具箱',
-      debugShowCheckedModeBanner: false,
-      routerConfig: appRouter,
-      theme: ShadThemeData(
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppPrefs.themeMode,
+      builder: (context, mode, _) => ShadApp.router(
+        title: 'SDM 工具箱',
+        debugShowCheckedModeBanner: false,
+        routerConfig: appRouter,
+        themeMode: mode,
+        theme: ShadThemeData(
         brightness: Brightness.light,
         colorScheme: const ShadColorScheme(
           background: Colors.white,
@@ -64,6 +70,7 @@ class MyApp extends StatelessWidget {
           ring: Color(0xFFD4D4D8),
           selection: Color(0xFFD4D4D8),
         ),
+      ),
       ),
     );
   }

@@ -1,12 +1,15 @@
 import 'dart:io';
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:pdfx/pdfx.dart' as pdfx;
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import '../utils/app_prefs.dart';
+import '../utils/file_utils.dart';
+import '../utils/image_tasks.dart';
+import '../widgets/result_dialog.dart';
 
 class PdfToImagePage extends StatefulWidget {
   const PdfToImagePage({super.key});
@@ -25,7 +28,7 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
   String _outputFormat = 'png';
   double _scale = 2.0;
   List<int> _selectedPages = [];
-  String? _outputDirectory;
+  String? _outputDirectory = AppPrefs.outputDir;
 
   @override
   void dispose() {
@@ -68,6 +71,7 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
     final result = await FilePicker.platform.getDirectoryPath();
     if (result != null) {
       setState(() => _outputDirectory = result);
+      AppPrefs.outputDir = result;
     }
   }
 
@@ -80,33 +84,26 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
         _conversionProgress = 0;
       });
 
-      String outputDir;
-      if (_outputDirectory != null) {
-        outputDir = _outputDirectory!;
-      } else {
-        final downloadsDir = await getDownloadsDirectory();
-        outputDir = downloadsDir?.path ?? (await getTemporaryDirectory()).path;
-      }
-
-      final baseName = _pdfName != null 
-          ? path.basenameWithoutExtension(_pdfName!) 
+      final baseName = _pdfName != null
+          ? path.basenameWithoutExtension(_pdfName!)
           : 'pdf_export';
-      final exportDir = Directory(path.join(outputDir, '${baseName}_images'));
-      if (!await exportDir.exists()) {
-        await exportDir.create(recursive: true);
-      }
+      final outputDir = await resolveOutputDir(
+        preferred: _outputDirectory,
+        subfolder: '${baseName}_images',
+      );
+      final exportDir = Directory(outputDir);
 
       final List<String> converted = [];
-      
+
       for (int i = 0; i < _selectedPages.length; i++) {
         final pageNum = _selectedPages[i];
-        
+
         setState(() {
           _conversionProgress = (i + 1) / _selectedPages.length;
         });
 
         final page = await _pdfDocument!.getPage(pageNum);
-        
+
         final renderWidth = page.width * _scale;
         final renderHeight = page.height * _scale;
         final pageImage = await page.render(
@@ -114,64 +111,45 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
           height: renderHeight,
           format: pdfx.PdfPageImageFormat.png,
         );
-        
+
         if (pageImage != null) {
-          final fileName = '${baseName}_page_$pageNum.$_outputFormat';
-          final filePath = path.join(exportDir.path, fileName);
-          final file = File(filePath);
-          
-          await file.writeAsBytes(pageImage.bytes);
+          // pdfx 始终输出 PNG；选 JPEG 时在 isolate 中重新编码为真正的 JPEG。
+          Uint8List bytes = pageImage.bytes;
+          String ext = '.png';
+          if (_outputFormat == 'jpg') {
+            final result = await compute(
+              runImageOp,
+              ImageOp(bytes: pageImage.bytes, format: 'jpg', quality: 92),
+            );
+            bytes = result.bytes;
+            ext = result.ext;
+          }
+          final filePath = path.join(exportDir.path, '${baseName}_page_$pageNum$ext');
+          await File(filePath).writeAsBytes(bytes);
           converted.add(filePath);
         }
-        
+
         await page.close();
       }
 
+      if (!mounted) return;
       setState(() => _isConverting = false);
-      _showSuccessDialog(exportDir.path, converted.length);
+      showResultDialog(
+        context,
+        title: '转换完成',
+        message: '已成功导出 ${converted.length} 页图片。\n\n${exportDir.path}',
+        outputPath: converted.isNotEmpty ? converted.first : exportDir.path,
+        isFile: converted.isNotEmpty,
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isConverting = false);
-      _showError('转换失败: $e');
+      showErrorDialog(context, '转换失败: $e');
     }
   }
 
   void _showError(String message) {
-    showShadDialog(
-      context: context,
-      builder: (context) => ShadDialog.alert(
-        title: const Text('错误'),
-        description: SelectableText(message),
-        actions: [
-          ShadButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: message));
-              Navigator.of(context).pop();
-            },
-            child: const Text('复制错误信息'),
-          ),
-          ShadButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSuccessDialog(String dirPath, int count) {
-    showShadDialog(
-      context: context,
-      builder: (context) => ShadDialog.alert(
-        title: const Text('转换完成'),
-        description: Text('已成功转换 $count 页图片\n\n保存位置:\n$dirPath'),
-        actions: [
-          ShadButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
+    showErrorDialog(context, message);
   }
 
   void _togglePageSelection(int pageNum) {

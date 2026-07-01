@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +7,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../utils/app_prefs.dart';
+import '../utils/file_utils.dart';
+import '../utils/image_tasks.dart';
+import '../widgets/result_dialog.dart';
 
 class ImageToPdfPage extends StatefulWidget {
   const ImageToPdfPage({super.key});
@@ -20,8 +24,8 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
   String _pageSize = 'A4';
   bool _landscape = false;
   String _fitMode = 'contain';
-  String? _outputDirectory;
-  final String _outputFilename = 'output.pdf';
+  String? _outputDirectory = AppPrefs.outputDir;
+  String _outputFilename = 'output.pdf';
   bool _isConverting = false;
   double _progress = 0;
 
@@ -50,7 +54,10 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
 
   Future<void> _pickOutputDirectory() async {
     final result = await FilePicker.platform.getDirectoryPath();
-    if (result != null) setState(() => _outputDirectory = result);
+    if (result != null) {
+      setState(() => _outputDirectory = result);
+      AppPrefs.outputDir = result;
+    }
   }
 
   Future<void> _convert() async {
@@ -62,19 +69,26 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
 
     try {
       final doc = pw.Document();
+      final bool originalSize = _pageSize == '原始尺寸';
 
       for (var i = 0; i < _images.length; i++) {
         final bytes = await _images[i].readAsBytes();
         final image = pw.MemoryImage(bytes);
 
         PdfPageFormat format;
-        if (_pageSize == '原始尺寸') {
-          format = PdfPageFormat.a4;
+        if (originalSize) {
+          // 页面精确匹配图片像素（按 72dpi 映射为 point），保留原始比例。
+          final size = await compute(decodeSize, bytes);
+          if (size != null && size[0] > 0 && size[1] > 0) {
+            format = PdfPageFormat(size[0].toDouble(), size[1].toDouble());
+          } else {
+            format = PdfPageFormat.a4;
+          }
         } else {
           format = _pageSizes[_pageSize] ?? PdfPageFormat.a4;
-        }
-        if (_landscape) {
-          format = PdfPageFormat(format.height, format.width);
+          if (_landscape) {
+            format = PdfPageFormat(format.height, format.width);
+          }
         }
 
         final fitMode = _fitMode == 'fill' ? pw.BoxFit.fill : pw.BoxFit.contain;
@@ -82,11 +96,11 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
         doc.addPage(
           pw.Page(
             pageFormat: format,
-            margin: _fitMode == 'fill'
+            margin: (originalSize || _fitMode == 'fill')
                 ? pw.EdgeInsets.zero
                 : const pw.EdgeInsets.all(16),
             build: (_) => pw.Center(
-              child: pw.Image(image, fit: fitMode),
+              child: pw.Image(image, fit: originalSize ? pw.BoxFit.fill : fitMode),
             ),
           ),
         );
@@ -94,41 +108,25 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
         setState(() => _progress = (i + 1) / _images.length);
       }
 
-      final outputDir = _outputDirectory ??
-          (await getDownloadsDirectory())?.path ??
-          (await getTemporaryDirectory()).path;
-
-      final outPath = p.join(outputDir, _outputFilename);
+      final dir = await resolveOutputDir(preferred: _outputDirectory);
+      final baseName = p.basenameWithoutExtension(
+          _outputFilename.isEmpty ? 'output.pdf' : _outputFilename);
+      final outPath = uniquePath(dir, baseName, '.pdf');
       await File(outPath).writeAsBytes(await doc.save());
 
+      if (!mounted) return;
       setState(() => _isConverting = false);
-      _showSuccess(outPath);
+      showResultDialog(
+        context,
+        title: '转换完成',
+        message: '${_images.length} 张图片已合成 PDF。\n\n$outPath',
+        outputPath: outPath,
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isConverting = false);
-      _showError('转换失败：$e');
+      showErrorDialog(context, '转换失败：$e');
     }
-  }
-
-  void _showSuccess(String path) {
-    showShadDialog(
-      context: context,
-      builder: (ctx) => ShadDialog.alert(
-        title: const Text('转换完成'),
-        description: Text('${_images.length} 张图片已转换为 PDF\n\n保存至：\n$path'),
-        actions: [
-          ShadButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showError(String msg) {
-    ShadToaster.of(context).show(
-      ShadToast(title: const Text('错误'), description: Text(msg)),
-    );
   }
 
   @override
@@ -258,9 +256,8 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
                     : ReorderableListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                         itemCount: _images.length,
-                        onReorder: (old, neo) {
+                        onReorderItem: (old, neo) {
                           setState(() {
-                            if (neo > old) neo--;
                             _images.insert(neo, _images.removeAt(old));
                           });
                         },
@@ -356,6 +353,21 @@ class _ImageToPdfPageState extends State<ImageToPdfPage> {
                               onTap: () => setState(() => _fitMode = 'fill'),
                             ),
                           ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Divider(height: 1, thickness: 0.5),
+                      ),
+                      _buildSettingTile(
+                        theme,
+                        title: '输出文件名',
+                        icon: Icons.edit_note_rounded,
+                        child: ShadInput(
+                          initialValue: _outputFilename,
+                          placeholder: const Text('请输入文件名'),
+                          onChanged: (v) => setState(
+                              () => _outputFilename = v.isEmpty ? 'output.pdf' : v),
                         ),
                       ),
                       const Padding(

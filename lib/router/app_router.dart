@@ -9,6 +9,13 @@ import '../pages/pdf_merge_page.dart';
 import '../pages/image_to_pdf_page.dart';
 import '../pages/pdf_watermark_page.dart';
 import '../pages/image_compress_page.dart';
+import '../pages/pdf_split_page.dart';
+import '../pages/pdf_encrypt_page.dart';
+import '../pages/image_convert_page.dart';
+import '../pages/image_watermark_page.dart';
+import '../pages/pdf_extract_text_page.dart';
+import '../pages/pdf_organize_page.dart';
+import '../pages/ocr_page.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -57,6 +64,41 @@ final appRouter = GoRouter(
       path: '/image-compress',
       name: 'imageCompress',
       builder: (context, state) => const ImageCompressPage(),
+    ),
+    GoRoute(
+      path: '/pdf-split',
+      name: 'pdfSplit',
+      builder: (context, state) => const PdfSplitPage(),
+    ),
+    GoRoute(
+      path: '/pdf-encrypt',
+      name: 'pdfEncrypt',
+      builder: (context, state) => const PdfEncryptPage(),
+    ),
+    GoRoute(
+      path: '/image-convert',
+      name: 'imageConvert',
+      builder: (context, state) => const ImageConvertPage(),
+    ),
+    GoRoute(
+      path: '/image-watermark',
+      name: 'imageWatermark',
+      builder: (context, state) => const ImageWatermarkPage(),
+    ),
+    GoRoute(
+      path: '/pdf-extract-text',
+      name: 'pdfExtractText',
+      builder: (context, state) => const PdfExtractTextPage(),
+    ),
+    GoRoute(
+      path: '/pdf-organize',
+      name: 'pdfOrganize',
+      builder: (context, state) => const PdfOrganizePage(),
+    ),
+    GoRoute(
+      path: '/ocr',
+      name: 'ocr',
+      builder: (context, state) => const OcrPage(),
     ),
   ],
 );

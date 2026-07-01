@@ -1,11 +1,14 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import '../utils/app_prefs.dart';
+import '../utils/file_utils.dart';
+import '../utils/image_tasks.dart';
+import '../widgets/result_dialog.dart';
 
 class ImageCompressPage extends StatefulWidget {
   const ImageCompressPage({super.key});
@@ -19,9 +22,13 @@ class _ImageCompressPageState extends State<ImageCompressPage> {
   int _jpegQuality = 80;
   String _outputFormat = 'jpg';
   bool _saveToSubfolder = true;
-  String? _outputDirectory;
+  String? _outputDirectory = AppPrefs.outputDir;
   bool _isCompressing = false;
   int _processedCount = 0;
+  bool _limitSize = false;
+  int _maxDimension = 1920;
+
+  static const _dimensionOptions = [1280, 1920, 2560, 3840];
 
   static const _supportedExtensions = [
     'jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff', 'tif', 'webp',
@@ -76,7 +83,10 @@ class _ImageCompressPageState extends State<ImageCompressPage> {
 
   Future<void> _pickOutputDirectory() async {
     final result = await FilePicker.platform.getDirectoryPath();
-    if (result != null) setState(() => _outputDirectory = result);
+    if (result != null) {
+      setState(() => _outputDirectory = result);
+      AppPrefs.outputDir = result;
+    }
   }
 
   Future<void> _compress() async {
@@ -90,50 +100,36 @@ class _ImageCompressPageState extends State<ImageCompressPage> {
       }
     });
 
-    String outputDir;
-    if (_outputDirectory != null) {
-      outputDir = _outputDirectory!;
-    } else {
-      final downloads = await getDownloadsDirectory();
-      final base = downloads?.path ?? (await getTemporaryDirectory()).path;
-      outputDir = _saveToSubfolder ? p.join(base, 'compressed') : base;
-    }
-    await Directory(outputDir).create(recursive: true);
+    final outputDir = await resolveOutputDir(
+      preferred: _outputDirectory,
+      subfolder: _saveToSubfolder ? 'compressed' : null,
+    );
 
+    String? firstOut;
     for (var i = 0; i < _entries.length; i++) {
       final entry = _entries[i];
       try {
         final bytes = await entry.file.readAsBytes();
-        final decoded = img.decodeImage(bytes);
-        if (decoded == null) throw Exception('无法解码图片');
-
-        final List<int> encoded;
-        String ext;
-
-        switch (_outputFormat) {
-          case 'jpg':
-            encoded = img.encodeJpg(decoded, quality: _jpegQuality);
-            ext = '.jpg';
-          case 'png':
-            encoded = img.encodePng(decoded);
-            ext = '.png';
-          default: // keep
-            final srcExt = p.extension(entry.file.path).toLowerCase();
-            if (srcExt == '.png') {
-              encoded = img.encodePng(decoded);
-              ext = '.png';
-            } else {
-              encoded = img.encodeJpg(decoded, quality: _jpegQuality);
-              ext = srcExt.isEmpty ? '.jpg' : srcExt;
-            }
-        }
+        final srcExt =
+            p.extension(entry.file.path).toLowerCase().replaceFirst('.', '');
+        final result = await compute(
+          runImageOp,
+          ImageOp(
+            bytes: bytes,
+            format: _outputFormat,
+            quality: _jpegQuality,
+            maxDimension: _limitSize ? _maxDimension : null,
+            sourceExt: srcExt,
+          ),
+        );
 
         final baseName = p.basenameWithoutExtension(entry.name);
-        final outPath = p.join(outputDir, '$baseName$ext');
-        await File(outPath).writeAsBytes(encoded);
+        final outPath = uniquePath(outputDir, baseName, result.ext);
+        await File(outPath).writeAsBytes(result.bytes);
+        firstOut ??= outPath;
 
         setState(() {
-          entry.compressedSize = encoded.length;
+          entry.compressedSize = result.bytes.length;
           _processedCount = i + 1;
         });
       } catch (e) {
@@ -144,33 +140,21 @@ class _ImageCompressPageState extends State<ImageCompressPage> {
       }
     }
 
+    if (!mounted) return;
     setState(() => _isCompressing = false);
-    _showSuccess(outputDir);
-  }
 
-  void _showSuccess(String dir) {
     final saved = _entries
         .where((e) => e.compressedSize != null && e.originalSize != null)
         .fold<int>(
           0,
           (s, e) => s + (e.originalSize! - e.compressedSize!).clamp(0, 999999999),
         );
-
-    showShadDialog(
-      context: context,
-      builder: (ctx) => ShadDialog.alert(
-        title: const Text('压缩完成'),
-        description: Text(
-          '处理 ${_entries.length} 张图片\n'
-          '节省空间：${_formatSize(saved)}\n\n'
-          '保存至：\n$dir',
-        ),
-        actions: [
-          ShadButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('确定')),
-        ],
-      ),
+    showResultDialog(
+      context,
+      title: '压缩完成',
+      message: '处理 ${_entries.length} 张图片，节省 ${_formatSize(saved)}。\n\n$outputDir',
+      outputPath: firstOut ?? outputDir,
+      isFile: firstOut != null,
     );
   }
 
@@ -379,7 +363,47 @@ class _ImageCompressPageState extends State<ImageCompressPage> {
                           ],
                           
                           const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Divider(height: 1, thickness: 0.5)),
-                          
+
+                          _buildSettingTile(
+                            theme,
+                            title: '尺寸限制',
+                            icon: Icons.photo_size_select_large_rounded,
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    ShadSwitch(
+                                      value: _limitSize,
+                                      onChanged: (v) => setState(() => _limitSize = v),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    const Expanded(
+                                      child: Text('缩小超大图片的最长边（等比）',
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                    ),
+                                  ],
+                                ),
+                                if (_limitSize) ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: _dimensionOptions.map((d) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: _ChoiceChip(
+                                          label: '${d}px',
+                                          selected: _maxDimension == d,
+                                          onTap: () => setState(() => _maxDimension = d),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+
+                          const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Divider(height: 1, thickness: 0.5)),
+
                           _buildSettingTile(
                             theme,
                             title: '保存位置',

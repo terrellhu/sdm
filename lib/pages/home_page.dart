@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../models/tool_item.dart';
+import '../utils/app_prefs.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -63,6 +64,62 @@ class HomePage extends StatelessWidget {
           color: const Color(0xFF6366F1),
           routeName: 'imageCompress',
         ),
+        ToolItem(
+          id: 'pdf_split',
+          name: 'PDF 拆分',
+          description: '提取页面或按份拆分',
+          icon: Icons.content_cut_rounded,
+          color: const Color(0xFFEC4899),
+          routeName: 'pdfSplit',
+        ),
+        ToolItem(
+          id: 'pdf_encrypt',
+          name: 'PDF 加密',
+          description: 'AES 密码保护与解密',
+          icon: Icons.lock_rounded,
+          color: const Color(0xFF14B8A6),
+          routeName: 'pdfEncrypt',
+        ),
+        ToolItem(
+          id: 'image_convert',
+          name: '格式转换',
+          description: 'JPG/PNG/BMP 批量互转',
+          icon: Icons.swap_horiz_rounded,
+          color: const Color(0xFFF97316),
+          routeName: 'imageConvert',
+        ),
+        ToolItem(
+          id: 'pdf_extract_text',
+          name: 'PDF 转文字',
+          description: '提取文本并导出 TXT',
+          icon: Icons.text_snippet_rounded,
+          color: const Color(0xFF64748B),
+          routeName: 'pdfExtractText',
+        ),
+        ToolItem(
+          id: 'image_watermark',
+          name: '图片水印',
+          description: '批量文字水印防盗图',
+          icon: Icons.branding_watermark_rounded,
+          color: const Color(0xFFA855F7),
+          routeName: 'imageWatermark',
+        ),
+        ToolItem(
+          id: 'pdf_organize',
+          name: 'PDF 页面编辑',
+          description: '排序·旋转·删除页面',
+          icon: Icons.auto_stories_rounded,
+          color: const Color(0xFF0EA5E9),
+          routeName: 'pdfOrganize',
+        ),
+        ToolItem(
+          id: 'ocr',
+          name: 'OCR 文字识别',
+          description: '扫描件转文本/可搜索PDF',
+          icon: Icons.document_scanner_rounded,
+          color: const Color(0xFFD946EF),
+          routeName: 'ocr',
+        ),
       ];
 
   @override
@@ -82,6 +139,26 @@ class HomePage extends StatelessWidget {
             pinned: true,
             elevation: 0,
             backgroundColor: theme.colorScheme.background,
+            actions: [
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: AppPrefs.themeMode,
+                builder: (context, mode, _) {
+                  final icon = switch (mode) {
+                    ThemeMode.light => Icons.light_mode_rounded,
+                    ThemeMode.dark => Icons.dark_mode_rounded,
+                    ThemeMode.system => Icons.brightness_auto_rounded,
+                  };
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: ShadIconButton.ghost(
+                      onPressed: AppPrefs.cycleThemeMode,
+                      icon: Icon(icon,
+                          size: 20, color: theme.colorScheme.foreground),
+                    ),
+                  );
+                },
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               title: Text(
@@ -130,7 +207,7 @@ class HomePage extends StatelessWidget {
                 maxCrossAxisExtent: 200,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
-                childAspectRatio: 0.9,
+                childAspectRatio: 0.82,
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) => _ToolCard(tool: _tools[index]),
