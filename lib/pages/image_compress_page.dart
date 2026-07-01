@@ -85,7 +85,7 @@ class _ImageCompressPageState extends State<ImageCompressPage> {
     final result = await FilePicker.platform.getDirectoryPath();
     if (result != null) {
       setState(() => _outputDirectory = result);
-      AppPrefs.outputDir = result;
+      await AppPrefs.rememberOutputDir(result);
     }
   }
 

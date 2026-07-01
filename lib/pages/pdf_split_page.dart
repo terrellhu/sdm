@@ -56,7 +56,7 @@ class _PdfSplitPageState extends State<PdfSplitPage> {
     final result = await FilePicker.platform.getDirectoryPath();
     if (result != null) {
       setState(() => _outputDirectory = result);
-      AppPrefs.outputDir = result;
+      await AppPrefs.rememberOutputDir(result);
     }
   }
 

@@ -71,7 +71,7 @@ class _PdfToImagePageState extends State<PdfToImagePage> {
     final result = await FilePicker.platform.getDirectoryPath();
     if (result != null) {
       setState(() => _outputDirectory = result);
-      AppPrefs.outputDir = result;
+      await AppPrefs.rememberOutputDir(result);
     }
   }
 

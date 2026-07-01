@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'app_prefs.dart';
 
 /// 统一解析输出目录：优先使用用户选择的目录，其次上次记住的目录，
@@ -22,37 +23,25 @@ Future<String> resolveOutputDir({String? preferred, String? subfolder}) async {
   return base;
 }
 
-/// 在系统文件管理器中定位并高亮某个文件（或打开某个目录）。
+/// 在系统文件管理器中定位文件（Windows 高亮选中）或打开所在目录。
+/// 非 Windows 用 url_launcher 打开目录，兼容 macOS 沙盒。
 Future<void> revealInFileManager(String path) async {
   try {
-    final type = FileSystemEntity.typeSync(path);
-    final isFile = type == FileSystemEntityType.file;
+    final isFile = FileSystemEntity.typeSync(path) == FileSystemEntityType.file;
     if (Platform.isWindows) {
-      if (isFile) {
-        // explorer /select, 正常成功也会返回非零退出码，忽略即可。
-        await Process.run('explorer.exe', ['/select,', path]);
-      } else {
-        await Process.run('explorer.exe', [path]);
-      }
-    } else if (Platform.isMacOS) {
-      await Process.run('open', isFile ? ['-R', path] : [path]);
-    } else {
-      final dir = isFile ? p.dirname(path) : path;
-      await Process.run('xdg-open', [dir]);
+      // explorer /select, 正常成功也会返回非零退出码，忽略即可。
+      await Process.run('explorer.exe', isFile ? ['/select,', path] : [path]);
+      return;
     }
+    final dir = isFile ? p.dirname(path) : path;
+    await launchUrl(Uri.file(dir));
   } catch (_) {}
 }
 
-/// 用系统默认程序打开文件或目录。
+/// 用系统默认程序打开文件或目录（跨平台，macOS 走 NSWorkspace，沙盒友好）。
 Future<void> openPath(String path) async {
   try {
-    if (Platform.isWindows) {
-      await Process.run('explorer.exe', [path]);
-    } else if (Platform.isMacOS) {
-      await Process.run('open', [path]);
-    } else {
-      await Process.run('xdg-open', [path]);
-    }
+    await launchUrl(Uri.file(path));
   } catch (_) {}
 }
 

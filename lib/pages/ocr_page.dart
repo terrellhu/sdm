@@ -9,8 +9,9 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../utils/file_utils.dart';
 import '../utils/image_tasks.dart';
+import '../utils/ocr_service.dart';
+import '../utils/ocr_types.dart';
 import '../utils/searchable_pdf.dart';
-import '../utils/windows_ocr.dart';
 import '../widgets/result_dialog.dart';
 import '../widgets/tool_widgets.dart';
 
@@ -71,8 +72,8 @@ class _OcrPageState extends State<OcrPage> {
     });
   }
 
-  /// 把一张图片字节归一化并 OCR，返回该页结果。
-  Future<OcrDocPage> _ocrOne(
+  /// 把一张图片字节归一化并 OCR，返回该页（用于可搜索 PDF）及其文本。
+  Future<(OcrDocPage, String)> _ocrOne(
     Uint8List sourceBytes, {
     required double pageWidthPt,
     required double pageHeightPt,
@@ -82,11 +83,11 @@ class _OcrPageState extends State<OcrPage> {
     final tmp = await getTemporaryDirectory();
     final imgPath = p.join(tmp.path, 'sdm_ocr_src_$index.png');
     await File(imgPath).writeAsBytes(norm.bytes);
-    final ocr = await WindowsOcr.recognizeImageFile(imgPath);
+    final ocr = await OcrService.recognizeImageFile(imgPath);
     try {
       await File(imgPath).delete();
     } catch (_) {}
-    return OcrDocPage(
+    final page = OcrDocPage(
       imageBytes: norm.bytes,
       pageWidthPt: pageWidthPt <= 0 ? norm.width.toDouble() : pageWidthPt,
       pageHeightPt: pageHeightPt <= 0 ? norm.height.toDouble() : pageHeightPt,
@@ -94,6 +95,7 @@ class _OcrPageState extends State<OcrPage> {
       imgH: norm.height,
       words: ocr.words,
     );
+    return (page, ocr.text);
   }
 
   Future<void> _recognize() async {
@@ -126,17 +128,14 @@ class _OcrPageState extends State<OcrPage> {
           final pageH = page.height;
           await page.close();
           if (rendered == null) continue;
-          final result = await _ocrOne(
+          final (page2, text) = await _ocrOne(
             rendered.bytes,
             pageWidthPt: pageW,
             pageHeightPt: pageH,
             index: i,
           );
-          pages.add(result);
-          final t = result.words.isEmpty
-              ? ''
-              : _buildPageText(result.words);
-          if (t.isNotEmpty) buffer.writeln(t);
+          pages.add(page2);
+          if (text.isNotEmpty) buffer.writeln(text);
         }
         await doc.close();
       } else {
@@ -146,15 +145,14 @@ class _OcrPageState extends State<OcrPage> {
             _progress = (i + 1) / _imageFiles.length;
           });
           final bytes = await _imageFiles[i].readAsBytes();
-          final result = await _ocrOne(
+          final (page, text) = await _ocrOne(
             bytes,
             pageWidthPt: 0,
             pageHeightPt: 0,
             index: i,
           );
-          pages.add(result);
-          final t = _buildPageText(result.words);
-          if (t.isNotEmpty) buffer.writeln(t);
+          pages.add(page);
+          if (text.isNotEmpty) buffer.writeln(text);
         }
       }
 
@@ -168,10 +166,10 @@ class _OcrPageState extends State<OcrPage> {
     } on OcrUnavailableException catch (e) {
       if (!mounted) return;
       setState(() => _isWorking = false);
-      showErrorDialog(
-        context,
-        '$e\n\n请在「设置 → 时间和语言 → 语言和区域」中，为中文添加“光学字符识别(OCR)”可选功能后重试。',
-      );
+      final tip = Platform.isWindows
+          ? '\n\n请在「设置 → 时间和语言 → 语言和区域」中，为中文添加“光学字符识别(OCR)”可选功能后重试。'
+          : '';
+      showErrorDialog(context, '$e$tip');
     } catch (e) {
       if (!mounted) return;
       setState(() => _isWorking = false);
@@ -232,12 +230,12 @@ class _OcrPageState extends State<OcrPage> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    if (!WindowsOcr.isSupported) {
+    if (!OcrService.isSupported) {
       return Scaffold(
         backgroundColor: theme.colorScheme.background,
         appBar: toolAppBar(context, title: 'OCR 文字识别'),
         body: Center(
-          child: Text('OCR 目前仅支持 Windows 平台',
+          child: Text('OCR 目前仅支持 Windows 与 macOS 平台',
               style: TextStyle(color: theme.colorScheme.mutedForeground)),
         ),
       );
@@ -416,7 +414,9 @@ class _OcrPageState extends State<OcrPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '若提示引擎不可用，请在系统「语言和区域」为中文添加“光学字符识别(OCR)”可选功能。',
+                        Platform.isWindows
+                            ? '${OcrService.platformNote}。若提示引擎不可用，请在系统「语言和区域」为中文添加“光学字符识别(OCR)”可选功能。'
+                            : '${OcrService.platformNote}，支持中英文，无需额外安装。',
                         style: TextStyle(
                             fontSize: 11,
                             color: theme.colorScheme.mutedForeground,
@@ -498,27 +498,3 @@ class _OcrPageState extends State<OcrPage> {
   }
 }
 
-/// 从词列表拼接一页文本：同一行相邻词若均为中文则不插空格。
-String _buildPageText(List<OcrWord> words) {
-  if (words.isEmpty) return '';
-  final sb = StringBuffer();
-  for (var i = 0; i < words.length; i++) {
-    final w = words[i].text;
-    if (i > 0) {
-      final prev = words[i - 1].text;
-      final joinNoSpace = _endsCjk(prev) && _startsCjk(w);
-      if (!joinNoSpace) sb.write(' ');
-    }
-    sb.write(w);
-  }
-  return sb.toString().trim();
-}
-
-bool _isCjk(int code) =>
-    (code >= 0x4E00 && code <= 0x9FFF) ||
-    (code >= 0x3400 && code <= 0x4DBF) ||
-    (code >= 0xF900 && code <= 0xFAFF) ||
-    (code >= 0x3000 && code <= 0x303F);
-
-bool _endsCjk(String s) => s.isNotEmpty && _isCjk(s.codeUnitAt(s.length - 1));
-bool _startsCjk(String s) => s.isNotEmpty && _isCjk(s.codeUnitAt(0));

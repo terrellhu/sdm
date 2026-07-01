@@ -24,6 +24,8 @@ dependencies:
   pdfx: ^2.9.2
   syncfusion_flutter_pdf: ^33.2.15
   shared_preferences: ^2.5.5
+  url_launcher: ^6.3.2
+  macos_secure_bookmarks: ^0.2.1
 
 dev_dependencies:
   flutter_test:

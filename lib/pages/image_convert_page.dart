@@ -71,7 +71,7 @@ class _ImageConvertPageState extends State<ImageConvertPage> {
     final result = await FilePicker.platform.getDirectoryPath();
     if (result != null) {
       setState(() => _outputDirectory = result);
-      AppPrefs.outputDir = result;
+      await AppPrefs.rememberOutputDir(result);
     }
   }
 

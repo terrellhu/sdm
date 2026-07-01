@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 import 'package:path/path.dart' as p;
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf;
-import 'windows_ocr.dart';
+import 'ocr_types.dart';
 
 /// 可搜索 PDF 的一页：底图 + 该图上识别出的词（像素坐标）。
 class OcrDocPage {
@@ -33,18 +33,36 @@ bool _fontLoaded = false;
 List<int>? _loadCjkFont() {
   if (_fontLoaded) return _cachedFont;
   _fontLoaded = true;
-  if (!Platform.isWindows) return _cachedFont = null;
-  final fontsDir =
-      p.join(Platform.environment['WINDIR'] ?? r'C:\Windows', 'Fonts');
-  const candidates = [
-    'simhei.ttf',
-    'simkai.ttf',
-    'simfang.ttf',
-    'simsun.ttc',
-    'msyh.ttc',
-  ];
-  for (final name in candidates) {
-    final f = File(p.join(fontsDir, name));
+  final candidates = <String>[];
+  if (Platform.isWindows) {
+    final fontsDir =
+        p.join(Platform.environment['WINDIR'] ?? r'C:\Windows', 'Fonts');
+    for (final n in const [
+      'simhei.ttf',
+      'simkai.ttf',
+      'simfang.ttf',
+      'simsun.ttc',
+      'msyh.ttc',
+    ]) {
+      candidates.add(p.join(fontsDir, n));
+    }
+  } else if (Platform.isMacOS) {
+    candidates.addAll(const [
+      '/System/Library/Fonts/PingFang.ttc',
+      '/System/Library/Fonts/STHeiti Light.ttc',
+      '/System/Library/Fonts/Hiragino Sans GB.ttc',
+      '/System/Library/Fonts/Supplemental/Songti.ttc',
+      '/Library/Fonts/Songti.ttc',
+    ]);
+  } else if (Platform.isLinux) {
+    candidates.addAll(const [
+      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+      '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+      '/usr/share/fonts/truetype/arphic/uming.ttc',
+    ]);
+  }
+  for (final path in candidates) {
+    final f = File(path);
     if (f.existsSync()) {
       try {
         return _cachedFont = f.readAsBytesSync();

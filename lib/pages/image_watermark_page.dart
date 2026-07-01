@@ -64,7 +64,7 @@ class _ImageWatermarkPageState extends State<ImageWatermarkPage> {
     final result = await FilePicker.platform.getDirectoryPath();
     if (result != null) {
       setState(() => _outputDirectory = result);
-      AppPrefs.outputDir = result;
+      await AppPrefs.rememberOutputDir(result);
     }
   }
 

@@ -2,46 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-
-/// 单个识别出的词及其在图片像素坐标系中的包围盒。
-class OcrWord {
-  final String text;
-  final double x, y, w, h;
-  const OcrWord(this.text, this.x, this.y, this.w, this.h);
-}
-
-/// 一页/一张图的 OCR 结果。
-class OcrPageResult {
-  final int width; // OCR 所用图片像素宽
-  final int height;
-  final List<String> lines;
-  final List<OcrWord> words;
-  const OcrPageResult({
-    required this.width,
-    required this.height,
-    required this.lines,
-    required this.words,
-  });
-
-  /// 拼接为可读文本：按行换行；同一行的中文词之间不加空格。
-  String get text {
-    return lines.map((l) => l.trim()).where((l) => l.isNotEmpty).join('\n');
-  }
-}
-
-/// OCR 引擎不可用（通常是未安装对应语言的 OCR 语言包）。
-class OcrUnavailableException implements Exception {
-  final List<String> available;
-  OcrUnavailableException(this.available);
-  @override
-  String toString() =>
-      '系统 OCR 引擎不可用。已安装的识别语言：${available.isEmpty ? '无' : available.join(', ')}';
-}
+import 'ocr_types.dart';
 
 /// 基于 Windows.Media.Ocr 的本地 OCR（经 PowerShell/WinRT 调用，离线免费）。
 class WindowsOcr {
-  static bool get isSupported => Platform.isWindows;
-
   static String? _scriptPath;
   static int _seq = 0;
 
@@ -61,9 +25,6 @@ class WindowsOcr {
     String imagePath, {
     String lang = 'zh-Hans-CN',
   }) async {
-    if (!isSupported) {
-      throw UnsupportedError('OCR 目前仅支持 Windows');
-    }
     final script = await _ensureScript();
     final tmp = await getTemporaryDirectory();
     final outPath = p.join(tmp.path, 'sdm_ocr_out_${_seq++}.json');
@@ -106,34 +67,7 @@ class WindowsOcr {
       throw Exception('OCR 出错：$err');
     }
 
-    final rawLines = map['lines'];
-    final lines = rawLines is List
-        ? rawLines.map((e) => e.toString()).toList()
-        : (rawLines == null ? <String>[] : [rawLines.toString()]);
-
-    final rawWords = map['words'];
-    final wordsList = rawWords is List
-        ? rawWords
-        : (rawWords == null ? const [] : [rawWords]);
-    final words = <OcrWord>[];
-    for (final w in wordsList) {
-      if (w is Map) {
-        words.add(OcrWord(
-          (w['t'] ?? '').toString(),
-          (w['x'] as num?)?.toDouble() ?? 0,
-          (w['y'] as num?)?.toDouble() ?? 0,
-          (w['w'] as num?)?.toDouble() ?? 0,
-          (w['h'] as num?)?.toDouble() ?? 0,
-        ));
-      }
-    }
-
-    return OcrPageResult(
-      width: (map['width'] as num?)?.toInt() ?? 0,
-      height: (map['height'] as num?)?.toInt() ?? 0,
-      lines: lines,
-      words: words,
-    );
+    return ocrResultFromMap(map);
   }
 
   /// 内嵌的 PowerShell 脚本：用 WinRT 调用系统 OCR，结果以 UTF-8 写入文件。
@@ -141,7 +75,7 @@ class WindowsOcr {
 param([string]$ImagePath, [string]$OutPath, [string]$Lang = "")
 $ErrorActionPreference = "Stop"
 function Write-Result($obj) {
-  $json = ConvertTo-Json $obj -Depth 6 -Compress
+  $json = ConvertTo-Json $obj -Depth 8 -Compress
   [System.IO.File]::WriteAllText($OutPath, $json, (New-Object System.Text.UTF8Encoding($false)))
 }
 try {
@@ -183,15 +117,15 @@ try {
   $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
 
   $lines = @()
-  $words = @()
   foreach ($line in $result.Lines) {
-    $lines += $line.Text
+    $lw = @()
     foreach ($wd in $line.Words) {
       $r = $wd.BoundingRect
-      $words += @{ t = $wd.Text; x = $r.X; y = $r.Y; w = $r.Width; h = $r.Height }
+      $lw += @{ t = $wd.Text; x = $r.X; y = $r.Y; w = $r.Width; h = $r.Height }
     }
+    $lines += @{ words = $lw }
   }
-  Write-Result @{ width = $bitmap.PixelWidth; height = $bitmap.PixelHeight; lines = $lines; words = $words; error = $null }
+  Write-Result @{ width = $bitmap.PixelWidth; height = $bitmap.PixelHeight; lines = $lines; error = $null }
 } catch {
   try { Write-Result @{ error = $_.Exception.Message } } catch {}
 }
